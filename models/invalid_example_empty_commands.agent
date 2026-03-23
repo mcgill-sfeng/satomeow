@@ -1,0 +1,25 @@
+System {
+    Planner {
+        reasoningStrategy: "chain-of-thought"
+        llm: "gpt-5"
+        persona: "planner"
+    }
+
+    Executor {
+        reasoningStrategy: "react"
+        llm: "gpt-5"
+        persona: "executor"
+        task Task {
+            name: "Summarize"
+            inputDescription: "A long document"
+            behavior: "Summarize the document"
+            examples {
+                TaskExample {
+                    input: "doc text"
+                    commands: []
+                    output: "summary"
+                }
+            }
+        }
+    }
+}

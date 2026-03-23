@@ -1,0 +1,82 @@
+Model:
+    system=System
+    rules*=Rule
+    skills*=Skill
+;
+
+System:
+    'System' '{'
+        planner=Planner
+        executors+=Executor
+        ('rules' ':' rules+=[Rule][','])?
+        ('skills' ':' skills+=[Skill][','])?
+    '}'
+;
+
+Agent:
+    Planner | Executor
+;
+
+Planner:
+    'Planner' '{'
+        'reasoningStrategy' ':' reasoningStrategy=STRING
+        'llm' ':' llm=STRING
+        'persona' ':' persona=STRING
+        ('rules' ':' rules*=[Rule][','])?
+    '}'
+;
+
+Executor:
+    'Executor' '{'
+        'reasoningStrategy' ':' reasoningStrategy=STRING
+        'llm' ':' llm=STRING
+        'persona' ':' persona=STRING
+        ('rules' ':' rules*=[Rule][','])?
+        ('task' task=Task)?
+    '}'
+;
+
+Task:
+    'Task' '{'
+        'name' ':' name=STRING
+        'inputDescription' ':' inputDescription=STRING
+        'behavior' ':' behavior=STRING
+        ('outputSchema' ':' outputSchema=STRING)?
+        'examples' '{'
+            examples*=TaskExample
+        '}'
+        ('skills' ':' skills*=[Skill][','])?
+    '}'
+;
+
+Rule:
+    'Rule' name=ID '{'
+        'negative' ':' negative=BOOL
+        'description' ':' description=STRING
+    '}'
+;
+
+TaskExample:
+    'TaskExample' '{'
+        'input' ':' input=STRING
+        'commands' ':' '[' commands*=STRING[','] ']'
+        'output' ':' output=STRING
+    '}'
+;
+
+Skill:
+    'Skill' name=ID '{'
+        'command' ':' command=STRING
+        'description' ':' description=STRING
+        'skillArguments' '{'
+            skillArguments*=SkillArgument
+        '}'
+    '}'
+;
+
+SkillArgument:
+    'SkillArgument' '{'
+        'name' ':' name=STRING
+        'description' ':' description=STRING
+    '}'
+;
