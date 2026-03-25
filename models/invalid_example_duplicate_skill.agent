@@ -24,27 +24,25 @@ System {
         }
     }
 
-    skills: web_search
-}
-
-Skill web_search {
-    command: "search_web"
-    description: "Search the web"
-    skillArguments {
-        SkillArgument {
-            name: "query"
-            description: "The search query"
+    Skill web_search {
+        command: "search_web"
+        description: "Search the web"
+        skillArguments {
+            SkillArgument {
+                name: "query"
+                description: "The search query"
+            }
         }
     }
-}
 
-Skill web_search {
-    command: "search_web_2"
-    description: "Duplicate skill"
-    skillArguments {
-        SkillArgument {
-            name: "query"
-            description: "The search query"
+    Skill web_search {
+        command: "search_web_2"
+        description: "Duplicate skill"
+        skillArguments {
+            SkillArgument {
+                name: "query"
+                description: "The search query"
+            }
         }
     }
 }

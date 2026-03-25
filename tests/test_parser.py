@@ -6,15 +6,14 @@ def test_load_metamodel():
 
 
 def test_parse_minimal_model():
-    model = parse_model("models/example_minimal.agent")
-    assert model is not None
-    assert model.system is not None
-    assert model.system.planner is not None
-    assert len(model.system.executors) >= 1
+    system = parse_model("models/example_minimal.agent")
+    assert system is not None
+    assert system.planner is not None
+    assert len(system.executors) >= 1
 
 
 def test_parse_full_model():
-    model = parse_model("models/example_full.agent")
-    assert model.system.planner.persona == "senior planning agent"
-    assert len(model.system.executors) == 1
-    assert model.system.executors[0].task.name == "WebResearch"
+    system = parse_model("models/example_full.agent")
+    assert system.planner.persona == "senior planning agent"
+    assert len(system.executors) == 1
+    assert system.executors[0].task.name == "WebResearch"

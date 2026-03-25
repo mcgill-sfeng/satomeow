@@ -23,15 +23,13 @@ System {
         }
     }
 
-    rules: safety_rule
-}
+    Rule safety_rule {
+        negative: false
+        description: "Do not hallucinate facts"
+    }
 
-Rule safety_rule {
-    negative: false
-    description: "Do not hallucinate facts"
-}
-
-Rule safety_rule {
-    negative: false
-    description: "Duplicate rule"
+    Rule safety_rule {
+        negative: false
+        description: "Duplicate rule"
+    }
 }

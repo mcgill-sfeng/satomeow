@@ -8,29 +8,11 @@ It is intended for the transformation stage, so the Jinja2/code generation team 
 
 The root parsed object is:
 
-- `model: Model`
-
-Main root attributes:
-
-- `model.system: System`
-- `model.rules: list[Rule]`
-- `model.skills: list[Skill]`
+- `system: System`
 
 ---
 
 ## Object Structure
-
-### Model
-
-Represents the entire parsed DSL file.
-
-Attributes:
-
-- `system: System`
-- `rules: list[Rule]`
-- `skills: list[Skill]`
-
----
 
 ### System
 
@@ -41,9 +23,7 @@ Attributes:
 - `planner: Planner`
 - `executors: list[Executor]`
 - `rules: list[Rule]`  
-  Cross-references to globally defined `Rule` objects.
 - `skills: list[Skill]`  
-  Cross-references to globally defined `Skill` objects.
 
 ---
 
@@ -205,13 +185,13 @@ These fields refer to globally defined objects:
 from textx import metamodel_from_file
 
 mm = metamodel_from_file("grammar/agent.tx")
-model = mm.model_from_file("models/example.agent")
+system = mm.model_from_file("models/example.agent")
 
-planner_persona = model.system.planner.persona
-executor_count = len(model.system.executors)
-task_name = model.system.executors[0].task.name
-system_rule_description = model.system.rules[0].description
-system_skill_command = model.system.skills[0].command
+planner_persona = system.planner.persona
+executor_count = len(system.executors)
+task_name = system.executors[0].task.name
+system_rule_description = system.rules[0].description
+system_skill_command = system.skills[0].command
 ```
 
 ## Parsing and Validation
@@ -223,8 +203,8 @@ Example:
 ```python
 from agent.parser import parse_model
 
-model = parse_model("models/example_full.agent")
-print(model.system.planner.persona)
+system = parse_model("models/example_full.agent")
+print(system.planner.persona)
 ```
 
 

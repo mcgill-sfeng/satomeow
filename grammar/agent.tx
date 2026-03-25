@@ -1,15 +1,9 @@
-Model:
-    system=System
-    rules*=Rule
-    skills*=Skill
-;
-
 System:
     'System' '{'
         planner=Planner
         executors+=Executor
-        ('rules' ':' rules+=[Rule][','])?
-        ('skills' ':' skills+=[Skill][','])?
+        rules*=Rule
+        skills*=Skill
     '}'
 ;
 

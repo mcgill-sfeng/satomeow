@@ -135,7 +135,7 @@ pytest
 ```python
 from agent.parser import parse_model
 
-model = parse_model("models/example_full.agent")
+system = parse_model("models/example_full.agent")
 ```
 
 ---
@@ -145,7 +145,7 @@ model = parse_model("models/example_full.agent")
 ```python
 from agent.ir import build_prompt_ir
 
-ir = build_prompt_ir(model)
+ir = build_prompt_ir(system)
 ```
 
 ---

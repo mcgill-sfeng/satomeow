@@ -1,4 +1,4 @@
-def build_prompt_ir(model) -> dict:
+def build_prompt_ir(system) -> dict:
     """
     Convert textX model into a Jinja2-friendly dictionary IR.
     """
@@ -17,21 +17,21 @@ def build_prompt_ir(model) -> dict:
                 for arg in skill.skillArguments
             ]
         }
-        for skill in model.skills
+        for skill in system.skills
     }
 
     # ---- Planner ----
     planner = {
-        "reasoning_strategy": model.system.planner.reasoningStrategy,
-        "llm": model.system.planner.llm,
-        "persona": model.system.planner.persona,
-        "rules": [rule.description for rule in model.system.planner.rules],
+        "reasoning_strategy": system.planner.reasoningStrategy,
+        "llm": system.planner.llm,
+        "persona": system.planner.persona,
+        "rules": [rule.description for rule in system.planner.rules],
     }
 
     # ---- Executors ----
     executors = []
 
-    for executor in model.system.executors:
+    for executor in system.executors:
         task_ir = None
 
         if executor.task is not None:
@@ -66,10 +66,10 @@ def build_prompt_ir(model) -> dict:
     system_ir = {
         "planner": planner,
         "executors": executors,
-        "rules": [rule.description for rule in model.system.rules],
+        "rules": [rule.description for rule in system.rules],
         "skills": [
             global_skills[skill.name]
-            for skill in model.system.skills
+            for skill in system.skills
         ],
     }
 

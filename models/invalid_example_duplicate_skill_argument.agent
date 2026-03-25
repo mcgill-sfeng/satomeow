@@ -24,20 +24,18 @@ System {
         }
     }
 
-    skills: web_search
-}
-
-Skill web_search {
-    command: "search_web"
-    description: "Search the web"
-    skillArguments {
-        SkillArgument {
-            name: "query"
-            description: "The search query"
-        }
-        SkillArgument {
-            name: "query"
-            description: "Duplicate argument name"
+    Skill web_search {
+        command: "search_web"
+        description: "Search the web"
+        skillArguments {
+            SkillArgument {
+                name: "query"
+                description: "The search query"
+            }
+            SkillArgument {
+                name: "query"
+                description: "Duplicate argument name"
+            }
         }
     }
 }

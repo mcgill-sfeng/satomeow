@@ -1,7 +1,7 @@
 from pathlib import Path
 from textx import metamodel_from_file
 
-from agent.validation import validate_model
+from agent.validation import validate_system
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -13,7 +13,7 @@ def load_metamodel():
 
 
 def parse_model(model_path):
-    mm = load_metamodel()
-    model = mm.model_from_file(str(model_path))
-    validate_model(model)
-    return model
+    metamodel = load_metamodel()
+    system = metamodel.model_from_file(str(model_path))
+    validate_system(system)
+    return system

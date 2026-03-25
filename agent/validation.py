@@ -1,13 +1,9 @@
 from textx import TextXSemanticError
 
 
-def validate_model(model):
-    validate_system(model.system)
-    validate_rules(model.rules)
-    validate_skills(model.skills)
-
-
 def validate_system(system):
+    validate_rules(system.rules)
+    validate_skills(system.skills)
     validate_planner(system.planner)
     for executor in system.executors:
         validate_executor(executor)

@@ -32,42 +32,41 @@ System {
         }
     }
 
-    rules: safety_rule, format_rule
-    skills: web_search, doc_reader
-}
+    Rule safety_rule {
+        negative: false
+        description: "Do not hallucinate facts"
+    }
 
-Rule safety_rule {
-    negative: false
-    description: "Do not hallucinate facts"
-}
+    Rule format_rule {
+        negative: false
+        description: "Always produce structured output"
+    }
 
-Rule format_rule {
-    negative: false
-    description: "Always produce structured output"
-}
+    Skill web_search {
+        command: "search_web"
+        description: "Search the web"
+        skillArguments {
+            SkillArgument {
+                name: "query"
+                description: "The search query"
+            }
+        }
+    }
 
-Skill web_search {
-    command: "search_web"
-    description: "Search the web"
-    skillArguments {
-        SkillArgument {
-            name: "query"
-            description: "The search query"
+    Skill doc_reader {
+        command: "read_docs"
+        description: "Read documentation pages"
+        skillArguments {
+            SkillArgument {
+                name: "url"
+                description: "The document URL"
+            }
+            SkillArgument {
+                name: "section"
+                description: "Optional section name"
+            }
         }
     }
 }
 
-Skill doc_reader {
-    command: "read_docs"
-    description: "Read documentation pages"
-    skillArguments {
-        SkillArgument {
-            name: "url"
-            description: "The document URL"
-        }
-        SkillArgument {
-            name: "section"
-            description: "Optional section name"
-        }
-    }
-}
+
