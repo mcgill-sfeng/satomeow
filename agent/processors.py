@@ -28,12 +28,31 @@ def build_system_from_model(model):
     point, all Rule and Skill processors have already run, so Rule objects
     carry a `negative` attribute and Skill objects carry `skillArguments`.
 
+    Skills and rules are collected first so that executor skill/rule references
+    (now plain ID lists) can be resolved by name lookup.  The raw ID lists are
+    preserved on executor/task as `_rule_refs` / `_skill_refs` so that
+    validation can report unknown-reference errors with a useful location.
+
     Args:
         model: textX Model with llm, reasoningStrategy, and items list.
 
     Returns:
         System: Complete metamodel object ready for validation.
     """
+    rules = [item for item in model.items if item.__class__.__name__ == "Rule"]
+    skills = [item for item in model.items if item.__class__.__name__ == "Skill"]
+
+    # First-occurrence wins; duplicates are caught by validate_skills/validate_rules.
+    rules_by_name = {}
+    for r in rules:
+        if r.name not in rules_by_name:
+            rules_by_name[r.name] = r
+
+    skills_by_name = {}
+    for s in skills:
+        if s.name not in skills_by_name:
+            skills_by_name[s.name] = s
+
     planner = Planner()
     planner.llm = model.llm
     planner.reasoningStrategy = model.reasoningStrategy
@@ -43,12 +62,16 @@ def build_system_from_model(model):
     executors = []
     for item in model.items:
         if item.__class__.__name__ == "ExecutorSyntax":
+            rule_refs = list(item.ruleRefs) if item.ruleRefs else []
+            skill_refs = list(item.skillRefs) if item.skillRefs else []
+
             executor = Executor()
             executor.llm = item.llm or model.llm
             executor.reasoningStrategy = item.reasoningStrategy or model.reasoningStrategy
             executor.persona = item.persona
-            executor.rules = list(item.rules) if item.rules else []
+            executor.rules = [rules_by_name[r] for r in rule_refs if r in rules_by_name]
             executor._source_obj = item
+            executor._rule_refs = rule_refs
 
             task = Task()
             task.name = item.name
@@ -56,14 +79,12 @@ def build_system_from_model(model):
             task.behavior = item.behavior
             task.outputSchema = item.outputSchema if item.outputSchema else "string"
             task.examples = list(item.examples)
-            task.skills = list(item.skills) if item.skills else []
+            task.skills = [skills_by_name[s] for s in skill_refs if s in skills_by_name]
             task._source_obj = item
+            task._skill_refs = skill_refs
 
             executor.task = task
             executors.append(executor)
-
-    rules = [item for item in model.items if item.__class__.__name__ == "Rule"]
-    skills = [item for item in model.items if item.__class__.__name__ == "Skill"]
 
     system = System()
     system.planner = planner

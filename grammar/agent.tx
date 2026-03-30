@@ -33,8 +33,8 @@ ExecutorSyntax:
         'input' ':' inputDescription=STRING
         'behavior' ':' behavior=STRING
         ('output' ':' outputSchema=STRING)?
-        ('skills' ':' '[' skills*=[Skill][','] ']')?
-        ('rules' ':' '[' rules*=[Rule][','] ']')?
+        ('skills' ':' '[' skillRefs*=ID[','] ']')?
+        ('rules' ':' '[' ruleRefs*=ID[','] ']')?
         examples*=Example
     '}'
 ;

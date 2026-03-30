@@ -6,8 +6,22 @@ def validate_system(system):
     validate_skills(system.skills)
     validate_planner(system.planner)
     validate_unique_executor_names(system.executors)
+    known_skill_names = {s.name for s in system.skills}
+    known_rule_names = {r.name for r in system.rules}
     for executor in system.executors:
         validate_executor(executor)
+        validate_executor_refs(executor, known_skill_names, known_rule_names)
+
+
+def validate_executor_refs(executor, known_skill_names, known_rule_names):
+    """Check that all skill/rule names referenced by an executor are defined."""
+    for ref in getattr(executor, "_rule_refs", []):
+        if ref not in known_rule_names:
+            _raise_semantic(f"Unknown rule reference: '{ref}'", executor)
+    if executor.task:
+        for ref in getattr(executor.task, "_skill_refs", []):
+            if ref not in known_skill_names:
+                _raise_semantic(f"Unknown skill reference: '{ref}'", executor.task)
 
 
 def validate_unique_executor_names(executors):
