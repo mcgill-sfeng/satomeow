@@ -1,0 +1,45 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python packaging/build outputs
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Test, lint, and type-check caches/reports
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+
+# VS Code extension (Node.js) generated artifacts
+vscode-extension/node_modules/
+vscode-extension/.vscode-test/
+vscode-extension/*.vsix
+vscode-extension/npm-debug.log*
+vscode-extension/yarn-debug.log*
+vscode-extension/yarn-error.log*
+vscode-extension/pnpm-debug.log*
+
+# IDE/OS noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~

@@ -1,12 +1,27 @@
-from textx import TextXSemanticError
+from textx import TextXSemanticError, get_location
 
 
 def validate_system(system):
     validate_rules(system.rules)
     validate_skills(system.skills)
     validate_planner(system.planner)
+    validate_unique_executor_names(system.executors)
     for executor in system.executors:
         validate_executor(executor)
+
+
+def validate_unique_executor_names(executors):
+    """Ensure task names are unique across all executors."""
+    seen = set()
+    for executor in executors:
+        if executor.task:
+            name = executor.task.name
+            if name in seen:
+                _raise_semantic(
+                    f"Duplicate executor/task name: {name}",
+                    executor.task,
+                )
+            seen.add(name)
 
 
 def validate_planner(planner):
@@ -40,11 +55,6 @@ def validate_task_example(example):
     check_required(example, "input")
     check_required(example, "output")
 
-    if not example.commands:
-        raise TextXSemanticError(
-            "TaskExample must contain at least one command"
-        )
-
 
 def validate_rules(rules):
     seen = set()
@@ -53,9 +63,7 @@ def validate_rules(rules):
         check_required(rule, "description")
 
         if rule.name in seen:
-            raise TextXSemanticError(
-                f"Duplicate rule name: {rule.name}"
-            )
+            _raise_semantic(f"Duplicate rule name: {rule.name}", rule)
         seen.add(rule.name)
 
 
@@ -67,9 +75,7 @@ def validate_skills(skills):
         check_required(skill, "description")
 
         if skill.name in seen:
-            raise TextXSemanticError(
-                f"Duplicate skill name: {skill.name}"
-            )
+            _raise_semantic(f"Duplicate skill name: {skill.name}", skill)
         seen.add(skill.name)
 
         validate_skill_arguments(skill)
@@ -83,8 +89,9 @@ def validate_skill_arguments(skill):
         check_required(arg, "description")
 
         if arg.name in seen:
-            raise TextXSemanticError(
-                f"Duplicate SkillArgument name '{arg.name}' in skill '{skill.name}'"
+            _raise_semantic(
+                f"Duplicate SkillArgument name '{arg.name}' in skill '{skill.name}'",
+                arg,
             )
         seen.add(arg.name)
 
@@ -93,11 +100,33 @@ def check_required(obj, field):
     value = getattr(obj, field, None)
 
     if value is None:
-        raise TextXSemanticError(
-            f"{obj.__class__.__name__}.{field} is required"
-        )
+        _raise_semantic(f"{obj.__class__.__name__}.{field} is required", obj)
 
     if isinstance(value, str) and value.strip() == "":
-        raise TextXSemanticError(
-            f"{obj.__class__.__name__}.{field} is required"
-        )
+        _raise_semantic(f"{obj.__class__.__name__}.{field} is required", obj)
+
+
+def _raise_semantic(message, model_obj):
+    location_obj = _get_location_obj(model_obj)
+    if location_obj is None:
+        raise TextXSemanticError(message)
+
+    location = get_location(location_obj)
+    raise TextXSemanticError(
+        message,
+        line=location["line"],
+        col=location["col"],
+        nchar=location["nchar"],
+        filename=location["filename"],
+    )
+
+
+def _get_location_obj(model_obj):
+    if hasattr(model_obj, "_tx_position"):
+        return model_obj
+
+    source_obj = getattr(model_obj, "_source_obj", None)
+    if source_obj is not None and hasattr(source_obj, "_tx_position"):
+        return source_obj
+
+    return None

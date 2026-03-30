@@ -6,127 +6,129 @@ This project implements a Domain-Specific Language (DSL) for specifying agent-ba
 
 The DSL provides a structured and systematic way to define:
 
-* Agent roles (Planner and Executor)
-* Tasks and their behavior
-* Operational rules and constraints
-* Few-shot examples
-* External tools (skills)
+- Agent roles (Planner and Executors)
+- Tasks and their behavior
+- Operational rules and constraints
+- Few-shot examples
+- External tools (skills)
 
 The goal is to reduce the complexity of prompt engineering and enable users to describe agent behavior at a higher level of abstraction.
 
+## DSL Syntax
+
+A `.agent` file begins with two global defaults, followed by any number of executor declarations, rules, and skills in any order.
+
+```text
+llm: "<model-id>"
+reasoning: "<strategy>"
+
+TaskName : "persona" {
+    llm: "<override>"          // optional — inherits global if omitted
+    reasoning: "<override>"    // optional — inherits global if omitted
+    input: "<description>"
+    behavior: "<description>"
+    output: "<schema>"         // optional — defaults to "string"
+    skills: [skill1, skill2]   // optional
+    rules: [rule1, rule2]      // optional
+
+    example {
+        input: "..."
+        commands: ["cmd1", "cmd2"]
+        output: "..."
+    }
+}
+
+do rule_name: "positive constraint description"
+dont rule_name: "negative constraint description"
+
+skill_name {
+    command: "<shell command template>"
+    description: "<description>"
+    param param_name: "<description>"
+}
+```
+
+**Key design decisions:**
+
+- The **Planner** is implicit — it is auto-created from the global `llm` and `reasoning` defaults.
+- **Executor + Task** are merged into a single declaration using `TaskName : "persona" { ... }`.
+- **Rules** are prefixed with `do` (positive) or `dont` (negative).
+- **Skills** are bare identifier blocks — no keyword prefix required.
+- Per-executor `llm` and `reasoning` override the global defaults when specified.
 
 ## Implementation
 
-This repository currently includes a **complete DSL frontend pipeline**, consisting of:
+This repository includes a complete DSL frontend pipeline:
 
 ### 1. Grammar Definition (textX)
 
-* A formal grammar (`agent.tx`) defined using textX
-* Covers all core DSL constructs:
+- Formal grammar defined in `grammar/agent.tx` using textX
+- Core constructs: `Model`, `ExecutorSyntax`, `Rule`, `Skill`, `Example`, `Param`
 
-  * `System`
-  * `Planner`
-  * `Executor`
-  * `Task`
-  * `Rule`
-  * `Skill`
-  * `TaskExample`
-  * `SkillArgument`
+### 2. Metamodel
 
+- Plain Python classes defined in `agent/metamodel.py`
+- Provides a stable, fixed object interface (`System`, `Planner`, `Executor`, `Task`, `SkillArgument`) shared by parsing, validation, and IR generation
 
-### 2. Parsing (Metamodel & Model)
+### 3. Object Processors
 
-* DSL files (`.agent`) are parsed into Python object models
-* Implemented using `textx.metamodel_from_file` and `model_from_file`
-* Supports:
+- Implemented in `agent/processors.py`
+- `process_rule` — converts `ruleType` string (`'do'`/`'dont'`) to a boolean `negative` attribute
+- `process_skill` — renames `params` to `skillArguments`
+- `build_system_from_model` — constructs the `System` metamodel object from the parsed `Model`
 
-  * Nested structures
-  * Cross-references (e.g., Rule, Skill)
-  * Optional and repeated elements
+### 4. Parsing
 
+- Entry point: `agent/parser.py`
+- `load_metamodel()` — loads `grammar/agent.tx` and registers object processors
+- `parse_model(path)` — parses and validates a `.agent` file, returning a `System`
 
-### 3. Semantic Validation
+### 5. Semantic Validation
 
-* Custom validation layer implemented in `agent/validation.py`
-* Ensures correctness beyond syntax
+- Implemented in `agent/validation.py`
+- Required field checks
+- Duplicate detection: rule names, skill names, skill argument names, executor/task names
+- Structural constraints: each `example` must contain at least one command
+- Default value handling (`outputSchema` defaults to `"string"`)
 
-Validation includes:
+### 6. Prompt IR (Intermediate Representation)
 
-* Required field checks
-* Duplicate detection:
+- Implemented in `agent/ir.py`
+- Converts the `System` object into a Jinja2-friendly dictionary
+- Flattened structure, consistent snake_case naming, cross-references resolved
 
-  * Rule names
-  * Skill names
-  * SkillArgument names (within a skill)
-* Structural constraints:
-
-  * TaskExample must contain at least one command
-* Default value handling (e.g., `outputSchema`)
-
-
-### 4. Model Contract
-
-* A stable object structure is defined for downstream usage
-* Documented in `models/README.md`
-* Ensures transformation logic does not depend on internal parsing details
-
-
-### 5. Prompt IR (Intermediate Representation)
-
-* A transformation-friendly intermediate representation is implemented in `agent/ir.py`
-* Converts textX model into a clean dictionary structure
-
-Features:
-
-* Flattened structure
-* Consistent naming (snake_case)
-* Cross-references resolved
-* Ready for Jinja2 templates
-
-
-### 6. CLI Interface
-
-* A simple command-line interface is provided (`agent/cli.py`)
-* Allows users to:
+### 7. CLI Interface
 
 ```bash
 python -m agent.cli models/example_full.agent
+python -m agent.cli models/example_full.agent --print-model-info
+python -m agent.cli models/example_full.agent --print-ir
 ```
 
-Options:
-
-* `--print-model-info`
-* `--print-ir`
-
-
-### 7. Example DSL Files
+### 8. Example DSL Files
 
 Located in `models/`:
 
-* `example_minimal.agent`
-* `example_full.agent`
-* Several invalid examples for testing validation
+- `example_minimal.agent` — minimal valid file (one executor, no skills or rules)
+- `example_full.agent` — full-featured example (two executors, rules, skills, multiple examples)
+- `invalid_example_*.agent` — invalid files used to test validation errors
 
-These examples cover all core language constructs.
-
-
-### 8. Testing
-
-Implemented using `pytest`.
-
-Test coverage includes:
-
-* Grammar loading
-* Parsing valid DSL files
-* Validation failure cases
-* Cross-reference resolution
-* IR generation
-
-Run tests:
+### 9. Testing
 
 ```bash
 pytest
 ```
+
+Test coverage includes:
+
+- Grammar loading and metamodel construction
+- Parsing valid DSL files (minimal and full)
+- Default inheritance and per-executor overrides
+- Rule `negative` attribute computation (`do`/`dont`)
+- Skill argument conversion (`params` → `skillArguments`)
+- Cross-reference resolution (rules and skills referenced by executors)
+- Validation failure cases (duplicates, empty commands, missing required fields)
+- IR structure and field values
 
 ## Usage
 
@@ -136,9 +138,9 @@ pytest
 from agent.parser import parse_model
 
 system = parse_model("models/example_full.agent")
+print(system.planner.llm)           # "gpt-5"
+print(system.executors[0].persona)  # "research agent"
 ```
-
----
 
 ### Build Prompt IR
 
@@ -146,14 +148,11 @@ system = parse_model("models/example_full.agent")
 from agent.ir import build_prompt_ir
 
 ir = build_prompt_ir(system)
+# ir["planner"], ir["executors"], ir["rules"], ir["skills"]
 ```
-
----
 
 ### Run CLI
 
 ```bash
 python -m agent.cli models/example_full.agent --print-ir
 ```
-
-

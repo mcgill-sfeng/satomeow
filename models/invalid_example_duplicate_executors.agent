@@ -1,0 +1,22 @@
+llm: "gpt-5"
+reasoning: "chain-of-thought"
+
+Summarize : "first summarizer" {
+    input: "doc"
+    behavior: "summarize"
+    example {
+        input: "doc"
+        commands: ["cmd"]
+        output: "out"
+    }
+}
+
+Summarize : "second summarizer" {
+    input: "doc"
+    behavior: "summarize differently"
+    example {
+        input: "doc"
+        commands: ["cmd"]
+        output: "out"
+    }
+}

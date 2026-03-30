@@ -1,72 +1,51 @@
-System {
-    Planner {
-        reasoningStrategy: "deliberative"
-        llm: "gpt-5"
-        persona: "senior planning agent"
-        rules: safety_rule, format_rule
+llm: "gpt-5"
+reasoning: "chain-of-thought"
+
+WebResearch : "research agent" {
+    input: "A user question requiring web research"
+    behavior: "Search, extract, and summarize relevant information"
+    output: "markdown"
+    skills: [webSearch, docReader]
+    rules: [verify_sources, no_hallucination]
+
+    example {
+        input: "What are the latest EU AI Act compliance deadlines?"
+        commands: ["ddgr EU AI Act compliance deadlines 2025", "ddgr EU AI Act enforcement timeline site:ec.europa.eu"]
+        output: "The EU AI Act entered into force in August 2024. Prohibitions on unacceptable-risk AI apply from February 2025; obligations for general-purpose AI models apply from August 2025; high-risk AI system rules apply from August 2026."
     }
 
-    Executor {
-        reasoningStrategy: "react"
-        llm: "gpt-5"
-        persona: "execution agent"
-        rules: safety_rule
-        task Task {
-            name: "WebResearch"
-            inputDescription: "A user question that requires web research"
-            behavior: "Search, extract, and summarize relevant information"
-            outputSchema: "markdown"
-            examples {
-                TaskExample {
-                    input: "Find recent news about AI regulation"
-                    commands: ["search_web", "open_results", "summarize"]
-                    output: "A concise summary of recent AI regulation news"
-                }
-                TaskExample {
-                    input: "Compare two APIs"
-                    commands: ["read_docs", "extract_features", "compare"]
-                    output: "A comparison report"
-                }
-            }
-            skills: web_search, doc_reader
-        }
-    }
-
-    Rule safety_rule {
-        negative: false
-        description: "Do not hallucinate facts"
-    }
-
-    Rule format_rule {
-        negative: false
-        description: "Always produce structured output"
-    }
-
-    Skill web_search {
-        command: "search_web"
-        description: "Search the web"
-        skillArguments {
-            SkillArgument {
-                name: "query"
-                description: "The search query"
-            }
-        }
-    }
-
-    Skill doc_reader {
-        command: "read_docs"
-        description: "Read documentation pages"
-        skillArguments {
-            SkillArgument {
-                name: "url"
-                description: "The document URL"
-            }
-            SkillArgument {
-                name: "section"
-                description: "Optional section name"
-            }
-        }
+    example {
+        input: "Compare the REST and GraphQL APIs of GitHub"
+        commands: ["ddgr GitHub REST API v3 documentation", "ddgr GitHub GraphQL API v4 documentation", "curl -s https://docs.github.com/en/rest"]
+        output: "GitHub REST API v3 uses resource-oriented URLs and returns fixed JSON shapes; GitHub GraphQL API v4 lets callers request exactly the fields they need, reducing over-fetching. REST is simpler for simple CRUD; GraphQL is preferred for complex, nested queries."
     }
 }
 
+TextEditor : "editor agent" {
+    llm: "claude-sonnet-4.5"
+    reasoning: "react"
+    input: "Text to edit with instructions"
+    behavior: "Apply edits based on user instructions"
+    rules: [no_hallucination]
 
+    example {
+        input: "Fix grammar: 'I has a cat'"
+        commands: []
+        output: "I have a cat"
+    }
+}
+
+do verify_sources: "always verify sources before citing"
+dont no_hallucination: "do not make up facts"
+
+webSearch {
+    command: "ddgr <query>"
+    description: "Search the web using DuckDuckGo from the terminal"
+    param query: "The search query string"
+}
+
+docReader {
+    command: "curl -s <url>"
+    description: "Fetch a documentation page as plain text"
+    param url: "The document URL to fetch"
+}

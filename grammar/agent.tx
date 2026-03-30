@@ -1,76 +1,74 @@
-System:
-    'System' '{'
-        planner=Planner
-        executors+=Executor
-        rules*=Rule
-        skills*=Skill
-    '}'
+// ============================================================
+// Agent DSL Grammar
+//
+// Key design choices:
+//   - Abbreviated syntax keywords (input, output, reasoning) map to
+//     full metamodel attribute names (inputDescription, outputSchema,
+//     reasoningStrategy) via object processors.
+//   - Executor + Task are merged: "TaskName : 'persona' { ... }"
+//   - Planner is implicit, auto-created from global llm/reasoning defaults.
+//   - Rules use do/dont prefix; Skills are bare identifier blocks.
+//   - Disambiguation: Name ':' STRING '{' = ExecutorSyntax;
+//                     ('do'|'dont') ID = Rule;
+//                     Name '{' = Skill
+// ============================================================
+
+Model:
+    'llm' ':' llm=STRING
+    'reasoning' ':' reasoningStrategy=STRING
+    items*=Item
 ;
 
-Agent:
-    Planner | Executor
+Item:
+    ExecutorSyntax | Rule | Skill
 ;
 
-Planner:
-    'Planner' '{'
-        'reasoningStrategy' ':' reasoningStrategy=STRING
-        'llm' ':' llm=STRING
-        'persona' ':' persona=STRING
-        ('rules' ':' rules*=[Rule][','])?
-    '}'
-;
-
-Executor:
-    'Executor' '{'
-        'reasoningStrategy' ':' reasoningStrategy=STRING
-        'llm' ':' llm=STRING
-        'persona' ':' persona=STRING
-        ('rules' ':' rules*=[Rule][','])?
-        ('task' task=Task)?
-    '}'
-;
-
-Task:
-    'Task' '{'
-        'name' ':' name=STRING
-        'inputDescription' ':' inputDescription=STRING
+// Merged executor + task declaration.
+// Attribute names match the metamodel (inputDescription, etc.) so
+// object processors can copy them without manual renaming.
+ExecutorSyntax:
+    name=ID ':' persona=STRING '{'
+        ('llm' ':' llm=STRING)?
+        ('reasoning' ':' reasoningStrategy=STRING)?
+        'input' ':' inputDescription=STRING
         'behavior' ':' behavior=STRING
-        ('outputSchema' ':' outputSchema=STRING)?
-        'examples' '{'
-            examples*=TaskExample
-        '}'
-        ('skills' ':' skills*=[Skill][','])?
+        ('output' ':' outputSchema=STRING)?
+        ('skills' ':' '[' skills*=[Skill][','] ']')?
+        ('rules' ':' '[' rules*=[Rule][','] ']')?
+        examples*=Example
     '}'
 ;
 
-Rule:
-    'Rule' name=ID '{'
-        'negative' ':' negative=BOOL
-        'description' ':' description=STRING
-    '}'
-;
-
-TaskExample:
-    'TaskExample' '{'
+Example:
+    'example' '{'
         'input' ':' input=STRING
         'commands' ':' '[' commands*=STRING[','] ']'
         'output' ':' output=STRING
     '}'
 ;
 
+// ruleType captures the literal 'do' or 'dont' string via a named string rule.
+// textX returns the matched string directly for pure-literal-alternative rules.
+// The Rule processor converts ruleType to a boolean `negative` attribute.
+Rule:
+    ruleType=RuleType name=ID ':' description=STRING
+;
+
+// Pure string-alternative rule — textX stores the matched keyword as a plain string.
+RuleType:
+    'dont' | 'do'
+;
+
+// No 'Skill' keyword — inferred by the absence of ': "persona"' after name.
+// params are converted to skillArguments by the Skill processor.
 Skill:
-    'Skill' name=ID '{'
+    name=ID '{'
         'command' ':' command=STRING
         'description' ':' description=STRING
-        'skillArguments' '{'
-            skillArguments*=SkillArgument
-        '}'
+        params*=Param
     '}'
 ;
 
-SkillArgument:
-    'SkillArgument' '{'
-        'name' ':' name=STRING
-        'description' ':' description=STRING
-    '}'
+Param:
+    'param' name=ID ':' description=STRING
 ;
