@@ -1,0 +1,88 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Agent DSL",
+  "scopeName": "source.agent",
+  "fileTypes": ["agent"],
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#string" },
+    { "include": "#rule-decl" },
+    { "include": "#global-keyword" },
+    { "include": "#executor-name" },
+    { "include": "#body-keyword" },
+    { "include": "#param-decl" },
+    { "include": "#skill-name" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+
+    "comment": {
+      "match": "//.*$",
+      "name": "comment.line.double-slash.agent"
+    },
+
+    "string": {
+      "begin": "\"",
+      "end": "\"",
+      "name": "string.quoted.double.agent",
+      "patterns": [
+        { "match": "\\\\.", "name": "constant.character.escape.agent" }
+      ]
+    },
+
+    "rule-decl": {
+      "comment": "do/dont at line start, followed by the rule name",
+      "match": "^\\s*(dont|do)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+      "captures": {
+        "1": { "name": "keyword.control.rule.agent" },
+        "2": { "name": "entity.name.tag.agent" }
+      }
+    },
+
+    "global-keyword": {
+      "comment": "Top-level llm/reasoning at column 0 — captured before executor-name",
+      "match": "^(llm|reasoning)(?=\\s*:)",
+      "name": "keyword.other.declaration.agent"
+    },
+
+    "executor-name": {
+      "comment": "Identifier at column 0 followed by : \"persona\" — executor declaration",
+      "match": "^([a-zA-Z_][a-zA-Z0-9_]*)(?=\\s*:\\s*\")",
+      "captures": {
+        "1": { "name": "entity.name.class.agent" }
+      }
+    },
+
+    "body-keyword": {
+      "comment": "Field keywords inside executor and skill blocks",
+      "match": "\\b(llm|reasoning|input|behavior|output|skills|rules|example|commands|command|description)(?=\\s*[:\\{])",
+      "name": "keyword.other.agent"
+    },
+
+    "param-decl": {
+      "comment": "param <name> inside a skill block",
+      "match": "^\\s*(param)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+      "captures": {
+        "1": { "name": "keyword.other.agent" },
+        "2": { "name": "variable.parameter.agent" }
+      }
+    },
+
+    "skill-name": {
+      "comment": "Identifier at column 0 followed directly by { — skill declaration",
+      "match": "^([a-zA-Z_][a-zA-Z0-9_]*)(?=\\s*\\{)",
+      "captures": {
+        "1": { "name": "entity.name.function.agent" }
+      }
+    },
+
+    "punctuation": {
+      "patterns": [
+        { "match": "[\\[\\]]", "name": "punctuation.definition.list.agent" },
+        { "match": "[\\{\\}]", "name": "punctuation.definition.block.agent" },
+        { "match": ":", "name": "punctuation.separator.agent" },
+        { "match": ",", "name": "punctuation.separator.comma.agent" }
+      ]
+    }
+  }
+}

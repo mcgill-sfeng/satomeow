@@ -1,35 +1,15 @@
-System {
-    Planner {
-        reasoningStrategy: "chain-of-thought"
-        llm: "gpt-5"
-        persona: "planner"
-    }
+llm: "gpt-5"
+reasoning: "chain-of-thought"
 
-    Executor {
-        reasoningStrategy: "react"
-        llm: "gpt-5"
-        persona: "executor"
-        task Task {
-            name: "Summarize"
-            inputDescription: "A long document"
-            behavior: "Summarize the document"
-            examples {
-                TaskExample {
-                    input: "doc text"
-                    commands: ["read"]
-                    output: "summary"
-                }
-            }
-        }
-    }
-
-    Rule safety_rule {
-        negative: false
-        description: "Do not hallucinate facts"
-    }
-
-    Rule safety_rule {
-        negative: false
-        description: "Duplicate rule"
+Summarize : "text summarizer" {
+    input: "A long document"
+    behavior: "Summarize the document"
+    example {
+        input: "doc text"
+        commands: ["read"]
+        output: "summary"
     }
 }
+
+do safety_rule: "Do not hallucinate facts"
+do safety_rule: "Duplicate rule"

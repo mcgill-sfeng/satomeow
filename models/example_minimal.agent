@@ -1,25 +1,13 @@
-System {
-    Planner {
-        reasoningStrategy: "chain-of-thought"
-        llm: "gpt-5"
-        persona: "planner"
-    }
+llm: "gpt-5"
+reasoning: "chain-of-thought"
 
-    Executor {
-        reasoningStrategy: "react"
-        llm: "gpt-5"
-        persona: "executor"
-        task Task {
-            name: "Summarize"
-            inputDescription: "A long document"
-            behavior: "Summarize the document"
-            examples {
-                TaskExample {
-                    input: "doc text"
-                    commands: ["read", "summarize"]
-                    output: "short summary"
-                }
-            }
-        }
+Summarize : "text summarizer" {
+    input: "Plain text to summarize"
+    behavior: "Summarize the document concisely"
+
+    example {
+        input: "Neural networks are computational models inspired by the human brain. They consist of layers of interconnected nodes that learn patterns from data through a process called backpropagation. Deep learning extends this by stacking many layers, enabling recognition of complex features in images, text, and audio."
+        commands: []
+        output: "Neural networks are brain-inspired models that learn from data via backpropagation; deep learning stacks many layers to handle complex tasks like vision and speech."
     }
 }

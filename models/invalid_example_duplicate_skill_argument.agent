@@ -1,41 +1,20 @@
-System {
-    Planner {
-        reasoningStrategy: "chain-of-thought"
-        llm: "gpt-5"
-        persona: "planner"
-    }
+llm: "gpt-5"
+reasoning: "chain-of-thought"
 
-    Executor {
-        reasoningStrategy: "react"
-        llm: "gpt-5"
-        persona: "executor"
-        task Task {
-            name: "Summarize"
-            inputDescription: "A long document"
-            behavior: "Summarize the document"
-            examples {
-                TaskExample {
-                    input: "doc text"
-                    commands: ["read"]
-                    output: "summary"
-                }
-            }
-            skills: web_search
-        }
+Summarize : "text summarizer" {
+    input: "A long document"
+    behavior: "Summarize the document"
+    skills: [web_search]
+    example {
+        input: "doc text"
+        commands: ["read"]
+        output: "summary"
     }
+}
 
-    Skill web_search {
-        command: "search_web"
-        description: "Search the web"
-        skillArguments {
-            SkillArgument {
-                name: "query"
-                description: "The search query"
-            }
-            SkillArgument {
-                name: "query"
-                description: "Duplicate argument name"
-            }
-        }
-    }
+web_search {
+    command: "search_web"
+    description: "Search the web"
+    param query: "The search query"
+    param query: "Duplicate argument name"
 }
