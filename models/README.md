@@ -2,7 +2,8 @@
 
 This document defines the object structure produced by textX after parsing a `.agent` file.
 
-It is intended for the transformation stage, so the Jinja2/code generation team can reliably access model attributes without guessing the parsed structure.
+It is intended for the transformation stage, so the Jinja2/code generation team can reliably access model attributes
+without guessing the parsed structure.
 
 ## Root Object
 
@@ -22,8 +23,8 @@ Attributes:
 
 - `planner: Planner`
 - `executors: list[Executor]`
-- `rules: list[Rule]`  
-- `skills: list[Skill]`  
+- `rules: list[Rule]`
+- `skills: list[Skill]`
 
 ---
 
@@ -159,6 +160,7 @@ Attributes:
 ## Containment vs Cross-Reference
 
 ### Containment
+
 These objects are structurally contained inside their parent:
 
 - `model.system`
@@ -169,6 +171,7 @@ These objects are structurally contained inside their parent:
 - `skill.skillArguments`
 
 ### Cross-Reference
+
 These fields refer to globally defined objects:
 
 - `system.rules -> Rule`

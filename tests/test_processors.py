@@ -1,13 +1,12 @@
 """Unit tests for agent/processors.py."""
 
-import pytest
-from agent.processors import process_rule, process_skill
 from agent.metamodel import SkillArgument
-
+from agent.processors import process_rule, process_skill
 
 # ---------------------------------------------------------------------------
 # process_rule
 # ---------------------------------------------------------------------------
+
 
 class _MockRule:
     def __init__(self, rule_type):
@@ -41,6 +40,7 @@ def test_process_rule_returns_same_object():
 # ---------------------------------------------------------------------------
 # process_skill
 # ---------------------------------------------------------------------------
+
 
 class _MockParam:
     def __init__(self, name, description):

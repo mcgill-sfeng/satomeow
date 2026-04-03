@@ -4,15 +4,26 @@
   "description": "Syntax highlighting for .agent files",
   "version": "0.1.0",
   "main": "./extension.js",
-  "activationEvents": ["onLanguage:agent"],
-  "engines": { "vscode": "^1.74.0" },
-  "categories": ["Programming Languages"],
+  "activationEvents": [
+    "onLanguage:agent"
+  ],
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
   "contributes": {
     "languages": [
       {
         "id": "agent",
-        "aliases": ["Agent DSL", "agent"],
-        "extensions": [".agent"],
+        "aliases": [
+          "Agent DSL",
+          "agent"
+        ],
+        "extensions": [
+          ".agent"
+        ],
         "configuration": "./language-configuration.json"
       }
     ],

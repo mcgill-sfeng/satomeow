@@ -1,9 +1,9 @@
 from pathlib import Path
+
 from textx import metamodel_from_file
 
-from agent.validation import validate_system
 from agent.processors import build_system_from_model, process_rule, process_skill
-
+from agent.validation import validate_system
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 GRAMMAR_PATH = PROJECT_ROOT / "grammar" / "agent.tx"
@@ -16,10 +16,12 @@ def load_metamodel():
     global _metamodel_cache
     if _metamodel_cache is None:
         mm = metamodel_from_file(str(GRAMMAR_PATH))
-        mm.register_obj_processors({
-            "Rule": process_rule,
-            "Skill": process_skill,
-        })
+        mm.register_obj_processors(
+            {
+                "Rule": process_rule,
+                "Skill": process_skill,
+            }
+        )
         _metamodel_cache = mm
     return _metamodel_cache
 

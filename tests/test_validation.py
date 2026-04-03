@@ -1,6 +1,6 @@
 import pytest
-
 from textx import TextXSemanticError
+
 from agent.parser import parse_model
 
 
@@ -17,7 +17,6 @@ def test_invalid_duplicate_skill():
 def test_invalid_duplicate_skill_argument():
     with pytest.raises(TextXSemanticError):
         parse_model("models/invalid_example_duplicate_skill_argument.agent")
-
 
 
 def test_invalid_duplicate_executor_names():

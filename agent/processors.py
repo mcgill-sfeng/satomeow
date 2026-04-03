@@ -105,7 +105,7 @@ def process_rule(rule):
     Returns:
         Rule: Same object with `negative` attribute added.
     """
-    rule.negative = (rule.ruleType == "dont")
+    rule.negative = rule.ruleType == "dont"
     return rule
 
 

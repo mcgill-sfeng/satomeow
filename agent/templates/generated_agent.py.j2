@@ -1,0 +1,79 @@
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+
+PROJECT_ROOT = {{ project_root|tojson }}
+if PROJECT_ROOT and PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from agent.runtime import AgentSystemRuntime, load_system_spec
+
+SOURCE_MODEL_PATH = {{ source_model_path|tojson }}
+SYSTEM_SPEC_JSON = r'''{{ spec_json }}'''
+
+
+def build_runtime(model_client=None, tool_executor=None, require_provider=False, use_dspy=False):
+    return AgentSystemRuntime(
+        load_system_spec(SYSTEM_SPEC_JSON),
+        model_client=model_client,
+        tool_executor=tool_executor,
+        source_model_path=SOURCE_MODEL_PATH,
+        require_provider=require_provider,
+        use_dspy=use_dspy,
+    )
+
+
+def run_agent(user_input: str, *, model_client=None, tool_executor=None, require_provider=False, use_dspy=False):
+    runtime = build_runtime(
+        model_client=model_client,
+        tool_executor=tool_executor,
+        require_provider=require_provider,
+        use_dspy=use_dspy,
+    )
+    return runtime.run(user_input)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Run the generated agent module."
+    )
+    parser.add_argument("prompt", help="User input to send to the generated agent")
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the full run result as JSON",
+    )
+
+    args = parser.parse_args(argv)
+    result = run_agent(args.prompt)
+
+    if args.json:
+        print(json.dumps({
+            "executor_name": result.executor_name,
+            "planner_reason": result.planner_reason,
+            "output": result.output,
+            "output_schema": result.output_schema,
+            "raw_response": result.raw_response,
+            "tool_results": [
+                {
+                    "command": tool.command,
+                    "stdout": tool.stdout,
+                    "stderr": tool.stderr,
+                    "exit_code": tool.exit_code,
+                }
+                for tool in result.tool_results
+            ],
+        }, indent=2))
+        return
+
+    if isinstance(result.output, dict):
+        print(json.dumps(result.output, indent=2))
+        return
+
+    print(result.output)
+
+
+if __name__ == "__main__":
+    main()

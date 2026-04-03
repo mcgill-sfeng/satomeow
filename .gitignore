@@ -43,3 +43,12 @@ Thumbs.db
 *.swp
 *.swo
 *~
+.idea
+
+# Credentials
+.env
+
+# Demo-generated artifacts
+models/data_visualizer/.venv/
+models/data_visualizer/generated/
+models/data_visualizer/output/

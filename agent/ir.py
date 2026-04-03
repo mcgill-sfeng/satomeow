@@ -9,15 +9,18 @@ def build_prompt_ir(system) -> dict:
             "name": skill.name,
             "command": skill.command,
             "description": skill.description,
-            "arguments": [
-                {
-                    "name": arg.name,
-                    "description": arg.description
-                }
-                for arg in skill.skillArguments
-            ]
+            "arguments": [{"name": arg.name, "description": arg.description} for arg in skill.skillArguments],
         }
         for skill in system.skills
+    }
+
+    global_rules = {
+        rule.name: {
+            "name": rule.name,
+            "negative": rule.negative,
+            "description": rule.description,
+        }
+        for rule in system.rules
     }
 
     # ---- Planner ----
@@ -25,7 +28,7 @@ def build_prompt_ir(system) -> dict:
         "reasoning_strategy": system.planner.reasoningStrategy,
         "llm": system.planner.llm,
         "persona": system.planner.persona,
-        "rules": [rule.description for rule in system.planner.rules],
+        "rules": [global_rules[rule.name] for rule in system.planner.rules],
     }
 
     # ---- Executors ----
@@ -48,29 +51,26 @@ def build_prompt_ir(system) -> dict:
                     }
                     for ex in executor.task.examples
                 ],
-                "skills": [
-                    global_skills[skill.name]
-                    for skill in executor.task.skills
-                ],
+                "skills": [global_skills[skill.name] for skill in executor.task.skills],
             }
 
-        executors.append({
-            "reasoning_strategy": executor.reasoningStrategy,
-            "llm": executor.llm,
-            "persona": executor.persona,
-            "rules": [rule.description for rule in executor.rules],
-            "task": task_ir,
-        })
+        executors.append(
+            {
+                "name": executor.task.name if executor.task is not None else executor.persona,
+                "reasoning_strategy": executor.reasoningStrategy,
+                "llm": executor.llm,
+                "persona": executor.persona,
+                "rules": [global_rules[rule.name] for rule in executor.rules],
+                "task": task_ir,
+            }
+        )
 
     # ---- System-level ----
     system_ir = {
         "planner": planner,
         "executors": executors,
-        "rules": [rule.description for rule in system.rules],
-        "skills": [
-            global_skills[skill.name]
-            for skill in system.skills
-        ],
+        "rules": [global_rules[rule.name] for rule in system.rules],
+        "skills": [global_skills[skill.name] for skill in system.skills],
     }
 
     return system_ir
