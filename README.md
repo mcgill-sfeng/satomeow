@@ -16,6 +16,37 @@ The DSL provides a structured and systematic way to define:
 The goal is to reduce the complexity of prompt engineering and enable users to describe agent behavior at a higher level
 of abstraction.
 
+## Quick Start
+
+After cloning the repository:
+
+1. Install the project dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+2. Configure an OpenAI-compatible provider in either `./.env` or `models/data_visualizer/.env`:
+
+```bash
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_API_KEY=your_api_key_here
+```
+
+3. Run the data visualizer demo:
+
+```bash
+python -m agent.cli run models/data_visualizer/data_visualizer.agent --verbose \
+  "Visualize the aligned monthly sales data in models/data_visualizer/data/aligned_sales.json"
+```
+
+4. Optionally enable example-focused prompt enrichment:
+
+```bash
+python -m agent.cli run models/data_visualizer/data_visualizer.agent --dspy --verbose \
+  "Visualize the aligned monthly sales data in models/data_visualizer/data/aligned_sales.json"
+```
+
 ## DSL Syntax
 
 A `.agent` file begins with two global defaults, followed by any number of executor declarations, rules, and skills in
@@ -68,8 +99,9 @@ skill_name {
 - A comma-separated field list for structured output, for example:
   `answer: str, confidence: float, sources: list[str]`
 
-The runtime parses this compact schema and can coerce structured JSON outputs to the declared types. It also exposes an
-optional bridge to DSPy signatures in `agent/schema.py` when `dspy` is installed.
+The runtime parses this compact schema and can coerce structured outputs to the declared types. Structured schemas are
+also compiled into Pydantic output models for the OpenAI Agents SDK. `--dspy` remains available as an optional
+example-driven prompt enrichment path.
 
 ## Provider Configuration
 
@@ -128,11 +160,10 @@ This repository includes the frontend compiler stages plus a code-generated runt
 ### 7. Runtime and Code Generation
 
 - `agent/codegen.py` renders runnable Python modules from the IR using Jinja2
-- `agent/runtime.py` provides planner/executor orchestration, shell-command tool execution, and tool-call parsing
-- Generated agents execute shell tools by extracting commands from `<tool_call>...</tool_call>` or `TOOL_CALL: ...`
-  responses
-- The default fallback model is deterministic and example-driven so generated agents remain runnable without a provider
-  integration
+- `agent/runtime.py` maps executors to `openai-agents-python` agents, compiles DSL skills into SDK function tools, and
+  compiles structured output schemas into Pydantic output models
+- The OpenAI Agents SDK owns the model/tool loop at runtime
+- `--dspy` is an optional prompt-enrichment mode that keeps using the task examples but does not replace the SDK loop
 
 ### 8. CLI Interface
 
@@ -140,6 +171,7 @@ This repository includes the frontend compiler stages plus a code-generated runt
 python -m agent.cli inspect models/example_full.agent --print-ir
 python -m agent.cli generate models/example_full.agent --output generated_agent.py
 python -m agent.cli run models/example_full.agent "Compare the REST and GraphQL APIs of GitHub"
+python -m agent.cli run models/example_full.agent --dspy "Compare the REST and GraphQL APIs of GitHub"
 ```
 
 Legacy inspection mode is still supported:
@@ -175,7 +207,7 @@ Test coverage includes:
 - Validation failure cases (duplicates, empty commands, missing required fields)
 - IR structure and field values
 - Code generation
-- Runtime tool-call extraction and shell execution
+- Runtime SDK wiring, shell tool execution, and structured output coercion
 - CLI generation and run flows
 
 ## Usage

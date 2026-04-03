@@ -1,11 +1,12 @@
-import importlib.util
+import asyncio
 import shutil
 from pathlib import Path
 
 import pytest
 
-from agent.codegen import generate_agent_module
-from agent.runtime import ExampleDrivenModel
+from agent.ir import build_prompt_ir
+from agent.parser import parse_model
+from agent.runtime import ShellToolExecutor, build_openai_agent
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEMO_ROOT = PROJECT_ROOT / "models" / "data_visualizer"
@@ -28,57 +29,82 @@ def cleanup_demo_outputs():
     shutil.rmtree(DEMO_ROOT / "output", ignore_errors=True)
 
 
-def test_aligned_data_demo_branch(tmp_path):
-    module = _load_generated_demo_module(tmp_path)
-    result = module.run_agent(
-        "Visualize the aligned monthly sales data in models/data_visualizer/data/aligned_sales.json",
-        model_client=ExampleDrivenModel(),
+def test_aligned_data_demo_tools():
+    tools = _tool_map()
+    asyncio.run(
+        tools["preparePythonEnv"].on_invoke_tool(
+            None,
+            '{"demo_root":"models/data_visualizer"}',
+        )
+    )
+    asyncio.run(
+        tools["runPythonScript"].on_invoke_tool(
+            None,
+            (
+                '{"python_bin":"models/data_visualizer/.venv/bin/python",'
+                '"script_path":"models/data_visualizer/scripts/visualize_data.py",'
+                '"input_path":"models/data_visualizer/data/aligned_sales.json",'
+                '"output_path":"models/data_visualizer/output/aligned_chart.svg"}'
+            ),
+        )
     )
 
-    assert result.output["status"] == "success"
-    assert result.output["artifact_path"] == "models/data_visualizer/output/aligned_chart.svg"
-    assert result.output["preprocessed_data_path"] == ""
-    assert result.output["preprocessor_script_path"] == ""
+    assert (DEMO_ROOT / ".venv" / "bin" / "python").exists()
     assert (DEMO_ROOT / "output" / "aligned_chart.svg").exists()
 
 
-def test_convertible_data_demo_branch(tmp_path):
-    module = _load_generated_demo_module(tmp_path)
-    result = module.run_agent(
-        "Visualize the monthly revenue CSV in models/data_visualizer/data/monthly_revenue.csv",
-        model_client=ExampleDrivenModel(),
+def test_convertible_data_demo_tools():
+    tools = _tool_map()
+    asyncio.run(tools["preparePythonEnv"].on_invoke_tool(None, '{"demo_root":"models/data_visualizer"}'))
+    asyncio.run(
+        tools["writePreprocessor"].on_invoke_tool(
+            None,
+            (
+                '{"python_bin":"models/data_visualizer/.venv/bin/python",'
+                '"writer_script_path":"models/data_visualizer/scripts/write_preprocessor.py",'
+                '"template_name":"monthly_csv_to_json",'
+                '"output_script_path":"models/data_visualizer/generated/monthly_csv_to_json.py"}'
+            ),
+        )
+    )
+    asyncio.run(
+        tools["runPythonScript"].on_invoke_tool(
+            None,
+            (
+                '{"python_bin":"models/data_visualizer/.venv/bin/python",'
+                '"script_path":"models/data_visualizer/generated/monthly_csv_to_json.py",'
+                '"input_path":"models/data_visualizer/data/monthly_revenue.csv",'
+                '"output_path":"models/data_visualizer/generated/monthly_revenue_converted.json"}'
+            ),
+        )
+    )
+    asyncio.run(
+        tools["runPythonScript"].on_invoke_tool(
+            None,
+            (
+                '{"python_bin":"models/data_visualizer/.venv/bin/python",'
+                '"script_path":"models/data_visualizer/scripts/visualize_data.py",'
+                '"input_path":"models/data_visualizer/generated/monthly_revenue_converted.json",'
+                '"output_path":"models/data_visualizer/output/converted_chart.svg"}'
+            ),
+        )
     )
 
-    assert result.output["status"] == "success"
-    assert result.output["artifact_path"] == "models/data_visualizer/output/converted_chart.svg"
-    assert result.output["preprocessed_data_path"] == "models/data_visualizer/generated/monthly_revenue_converted.json"
-    assert result.output["preprocessor_script_path"] == "models/data_visualizer/generated/monthly_csv_to_json.py"
     assert (DEMO_ROOT / "generated" / "monthly_csv_to_json.py").exists()
     assert (DEMO_ROOT / "generated" / "monthly_revenue_converted.json").exists()
     assert (DEMO_ROOT / "output" / "converted_chart.svg").exists()
 
 
-def test_unsupported_data_demo_branch(tmp_path):
-    module = _load_generated_demo_module(tmp_path)
-    result = module.run_agent(
-        "Visualize the unsupported dataset in models/data_visualizer/data/unsupported_nested.json",
-        model_client=ExampleDrivenModel(),
-    )
-
-    assert result.output["status"] == "unsupported_input"
-    assert "cannot be converted" in result.output["message"]
-    assert result.output["artifact_path"] == ""
-    assert result.output["preprocessed_data_path"] == ""
-    assert result.output["preprocessor_script_path"] == ""
-    assert not (DEMO_ROOT / "generated").exists()
-    assert not (DEMO_ROOT / "output").exists()
+def test_demo_prompt_includes_unsupported_example():
+    system = parse_model(MODEL_PATH)
+    executor = build_prompt_ir(system)["executors"][0]
+    prompt = build_openai_agent(executor, tool_executor=ShellToolExecutor(), use_dspy=False).instructions
+    assert "unsupported_input" in prompt
+    assert "cannot be converted" in prompt
 
 
-def _load_generated_demo_module(tmp_path: Path):
-    module_path = tmp_path / "generated_data_visualizer.py"
-    generate_agent_module(MODEL_PATH, module_path)
-    spec = importlib.util.spec_from_file_location("generated_data_visualizer", module_path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
+def _tool_map():
+    system = parse_model(MODEL_PATH)
+    executor = build_prompt_ir(system)["executors"][0]
+    agent = build_openai_agent(executor, tool_executor=ShellToolExecutor(), use_dspy=False)
+    return {tool.name: tool for tool in agent.tools}

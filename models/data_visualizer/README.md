@@ -29,7 +29,14 @@ OPENAI_API_KEY=your_api_key_here
 ## Run
 
 ```bash
-python -m agent.cli run models/data_visualizer/data_visualizer.agent \
+python -m agent.cli run models/data_visualizer/data_visualizer.agent --verbose \
+  "Visualize the aligned monthly sales data in models/data_visualizer/data/aligned_sales.json"
+```
+
+Optional example-focused prompt enrichment:
+
+```bash
+python -m agent.cli run models/data_visualizer/data_visualizer.agent --dspy --verbose \
   "Visualize the aligned monthly sales data in models/data_visualizer/data/aligned_sales.json"
 ```
 

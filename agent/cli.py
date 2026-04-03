@@ -9,7 +9,6 @@ from pathlib import Path
 from agent.codegen import generate_agent_module
 from agent.ir import build_prompt_ir
 from agent.parser import parse_model
-from agent.runtime import ExampleDrivenModel
 
 
 def main(argv=None):
@@ -83,12 +82,7 @@ def _build_parser():
     run_parser.add_argument(
         "--dspy",
         action="store_true",
-        help="Use a DSPy few-shot client built from the task examples",
-    )
-    run_parser.add_argument(
-        "--use-examples",
-        action="store_true",
-        help="Use the deterministic example-driven local model instead of the provider client",
+        help="Use the compile-time DSPy-style example prompt enrichment path",
     )
     run_parser.set_defaults(func=_run_generated_agent)
 
@@ -144,20 +138,20 @@ def _run_generate(args):
 
 
 def _run_generated_agent(args):
-    model_client = ExampleDrivenModel() if args.use_examples else None
     with tempfile.TemporaryDirectory(prefix="agent_codegen_") as temp_dir:
         module_path = Path(temp_dir) / "generated_agent.py"
         generate_agent_module(args.model_path, module_path)
         module = _load_generated_module(module_path)
         result = module.run_agent(
             args.prompt,
-            model_client=model_client,
-            require_provider=not args.use_examples,
+            require_provider=True,
             use_dspy=args.dspy,
         )
 
     if args.verbose:
         print(f"[executor] {result.executor_name} — {result.planner_reason}", flush=True)
+        print(f"\n[system_prompt]\n{result.system_prompt}", flush=True)
+        print(f"\n[user_input]\n{result.user_input}", flush=True)
         for tool in result.tool_results:
             print(f"\n[tool_call] $ {tool.command}", flush=True)
             print(f"[exit_code] {tool.exit_code}", flush=True)
@@ -165,7 +159,8 @@ def _run_generated_agent(args):
                 print(f"[stdout]\n{tool.stdout.rstrip()}", flush=True)
             if tool.stderr.strip():
                 print(f"[stderr]\n{tool.stderr.rstrip()}", flush=True)
-        print(f"\n[raw_response]\n{result.raw_response}", flush=True)
+        for index, raw_response in enumerate(result.raw_responses or (result.raw_response,), start=1):
+            print(f"\n[raw_response {index}]\n{raw_response}", flush=True)
         print()
 
     if args.json:
@@ -177,6 +172,9 @@ def _run_generated_agent(args):
                     "output": result.output,
                     "output_schema": result.output_schema,
                     "raw_response": result.raw_response,
+                    "system_prompt": result.system_prompt,
+                    "user_input": result.user_input,
+                    "raw_responses": list(result.raw_responses),
                     "tool_results": [
                         {
                             "command": tool.command,

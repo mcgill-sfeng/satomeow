@@ -5,23 +5,20 @@ import os
 import re
 import shlex
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
-import openai
+from agents import Agent, FunctionTool, RunConfig, Runner
+from agents.items import ToolCallOutputItem
+from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from dotenv import dotenv_values
+from openai import AsyncOpenAI
+from pydantic import ConfigDict, Field, create_model
 
 from agent.schema import coerce_structured_output, describe_output_schema, parse_output_schema
 
-TOOL_CALL_XML_RE = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
-TOOL_CALL_LINE_RE = re.compile(r"^\s*TOOL_CALL:\s*(.+?)\s*$", re.MULTILINE)
-FINAL_XML_RE = re.compile(r"<final>\s*(.*?)\s*</final>", re.DOTALL)
-
-
-@dataclass(frozen=True)
-class ToolCall:
-    command: str
+_PARAM_PATTERN = re.compile(r"<([a-zA-Z_][a-zA-Z0-9_]*)>")
 
 
 @dataclass(frozen=True)
@@ -45,28 +42,10 @@ class RunResult:
     output: Any
     output_schema: str
     raw_response: str
-    tool_results: tuple[ToolResult, ...] = ()
-
-
-@dataclass
-class ExecutorContext:
+    system_prompt: str
     user_input: str
-    executor: dict[str, Any]
-    tool_results: list[ToolResult] = field(default_factory=list)
-
-    @property
-    def task(self) -> dict[str, Any]:
-        return self.executor["task"]
-
-
-class ModelClient(Protocol):
-    def generate(
-        self,
-        *,
-        system_prompt: str,
-        user_prompt: str,
-        context: dict[str, Any],
-    ) -> str: ...
+    raw_responses: tuple[str, ...] = ()
+    tool_results: tuple[ToolResult, ...] = ()
 
 
 class ShellToolExecutor:
@@ -114,172 +93,85 @@ class HeuristicPlanner:
         )
 
 
-class ExampleDrivenModel:
-    """
-    Deterministic fallback used when no external model client is wired in.
-
-    It picks the nearest example, emits its commands as tool calls one-by-one,
-    then synthesizes a final answer from the gathered tool output.
-    """
-
-    def __init__(self):
-        self._sessions: dict[str, dict[str, Any]] = {}
-
-    def generate(self, *, system_prompt: str, user_prompt: str, context: dict[str, Any]) -> str:
-        del system_prompt, user_prompt
-        task = context["executor"]["task"]
-        user_input = context["user_input"]
-        key = context["executor"]["name"]
-
-        if key not in self._sessions:
-            example = _select_best_example(user_input, task["examples"])
-            self._sessions[key] = {
-                "example": example,
-                "pending_commands": list(example["commands"]) if example else [],
-            }
-
-        session = self._sessions[key]
-        pending = session["pending_commands"]
-        if pending:
-            command = pending.pop(0)
-            return f"<tool_call>{command}</tool_call>"
-
-        example = session["example"]
-        if example is not None:
-            return f"<final>{example['output']}</final>"
-
-        return _build_fallback_final_response(context)
-
-
-class OpenAIChatModel:
-    def __init__(self, *, api_key: str, base_url: str | None = None, timeout_seconds: int = 60):
-        kwargs: dict[str, Any] = {"api_key": api_key, "timeout": timeout_seconds}
-        if base_url is not None:
-            kwargs["base_url"] = base_url
-        self._client = openai.OpenAI(**kwargs)
-
-    def generate(self, *, system_prompt: str, user_prompt: str, context: dict[str, Any]) -> str:
-        model_name = context["executor"]["llm"]
-        completion = self._client.chat.completions.create(
-            model=model_name,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-        )
-        return completion.choices[0].message.content
-
-
-class DSPyExampleModel:
-    def __init__(self, *, api_key: str, base_url: str | None = None, timeout_seconds: int = 60):
-        import dspy
-
-        self._dspy = dspy
-        self.api_key = api_key
-        self.base_url = base_url
-        self.timeout_seconds = timeout_seconds
-        self._predictors: dict[str, Any] = {}
-        self._lms: dict[str, Any] = {}
-
-    def generate(self, *, system_prompt: str, user_prompt: str, context: dict[str, Any]) -> str:
-        executor = context["executor"]
-        executor_name = executor["name"]
-        predictor = self._predictors.get(executor_name)
-        if predictor is None:
-            predictor = self._dspy.Predict("system_prompt, user_prompt -> response")
-            predictor.demos = _build_dspy_demos(self._dspy, executor)
-            self._predictors[executor_name] = predictor
-
-        lm = self._lms.get(executor["llm"])
-        if lm is None:
-            lm_kwargs: dict[str, Any] = {
-                "model": f"openai/{executor['llm']}",
-                "api_key": self.api_key,
-                "cache": False,
-                "num_retries": 2,
-                "timeout": self.timeout_seconds,
-            }
-            if self.base_url:
-                lm_kwargs["api_base"] = self.base_url
-                lm_kwargs["base_url"] = self.base_url
-            lm = self._dspy.LM(**lm_kwargs)
-            self._lms[executor["llm"]] = lm
-
-        prediction = predictor(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            lm=lm,
-        )
-        return prediction.response
-
-
 class AgentSystemRuntime:
     def __init__(
         self,
         system_spec: dict[str, Any],
         *,
-        model_client: ModelClient | None = None,
         tool_executor: ShellToolExecutor | None = None,
         planner: HeuristicPlanner | None = None,
-        max_tool_round_trips: int = 6,
         source_model_path: str | None = None,
         require_provider: bool = False,
         use_dspy: bool = False,
     ):
         self.system_spec = system_spec
-        self.source_model_path = source_model_path
-        self.model_client = model_client or create_model_client(
-            source_model_path=source_model_path,
-            require_provider=require_provider,
-            use_dspy=use_dspy,
-        )
         self.tool_executor = tool_executor or ShellToolExecutor()
         self.planner = planner or HeuristicPlanner()
-        self.max_tool_round_trips = max_tool_round_trips
+        self.source_model_path = source_model_path
+        self.require_provider = require_provider
+        self.use_dspy = use_dspy
 
     def run(self, user_input: str) -> RunResult:
         decision = self.planner.choose_executor(user_input, self.system_spec["executors"])
         executor = self._find_executor(decision.executor_name)
-        context = ExecutorContext(user_input=user_input, executor=executor)
+        run_config = self._build_run_config(executor)
+        system_prompt = build_executor_system_prompt(executor, use_dspy=self.use_dspy)
+        agent = build_openai_agent(
+            executor,
+            tool_executor=self.tool_executor,
+            use_dspy=self.use_dspy,
+        )
+        sdk_result = Runner.run_sync(
+            agent,
+            user_input,
+            run_config=run_config,
+        )
+        return self._finalize_result(decision, executor, sdk_result, system_prompt, user_input)
 
-        raw_response = ""
-        for _ in range(self.max_tool_round_trips + 1):
-            response = self.model_client.generate(
-                system_prompt=build_executor_system_prompt(executor),
-                user_prompt=build_executor_user_prompt(context),
-                context=_context_dict(context),
-            )
-            raw_response = response
-            tool_call = extract_tool_call(response)
-            if tool_call is None:
-                return self._finalize_response(decision, executor, response, context.tool_results)
+    def _build_run_config(self, executor: dict[str, Any]) -> RunConfig:
+        config = load_openai_config(source_model_path=self.source_model_path)
+        if config is None:
+            if self.require_provider:
+                raise RuntimeError(missing_provider_message(self.source_model_path))
+            raise RuntimeError(missing_provider_message(self.source_model_path))
 
-            context.tool_results.append(self.tool_executor.execute(tool_call.command))
+        client = AsyncOpenAI(
+            api_key=config["OPENAI_API_KEY"],
+            base_url=config.get("OPENAI_BASE_URL"),
+        )
+        return RunConfig(
+            model=OpenAIChatCompletionsModel(executor["llm"], openai_client=client),
+            tracing_disabled=True,
+            workflow_name=f"{executor['name']} runtime",
+        )
 
-        raise RuntimeError("Agent exceeded the maximum number of tool round trips.")
-
-    def _finalize_response(
+    def _finalize_result(
         self,
         decision: PlannerDecision,
         executor: dict[str, Any],
-        response: str,
-        tool_results: list[ToolResult],
+        sdk_result: Any,
+        system_prompt: str,
+        user_input: str,
     ) -> RunResult:
-        final_text = extract_final_output(response)
         schema = parse_output_schema(executor["task"]["output_schema"])
-        output: Any = final_text
-
+        raw_responses = tuple(_dump_raw_response(response) for response in sdk_result.raw_responses)
+        output = sdk_result.final_output
+        if hasattr(output, "model_dump"):
+            output = output.model_dump()
         if schema.is_structured:
-            parsed_json = json.loads(final_text)
-            output = coerce_structured_output(parsed_json, schema)
-
+            output = coerce_structured_output(output, schema)
+        tool_results = tuple(_extract_tool_results(sdk_result.new_items))
+        raw_response = raw_responses[-1] if raw_responses else _stringify_output(output)
         return RunResult(
             executor_name=decision.executor_name,
             planner_reason=decision.reason,
             output=output,
             output_schema=executor["task"]["output_schema"],
-            raw_response=response,
-            tool_results=tuple(tool_results),
+            raw_response=raw_response,
+            system_prompt=system_prompt,
+            user_input=user_input,
+            raw_responses=raw_responses,
+            tool_results=tool_results,
         )
 
     def _find_executor(self, executor_name: str) -> dict[str, Any]:
@@ -289,81 +181,128 @@ class AgentSystemRuntime:
         raise KeyError(f"Unknown executor name: {executor_name}")
 
 
-def build_executor_system_prompt(executor: dict[str, Any]) -> str:
+def build_openai_agent(
+    executor: dict[str, Any],
+    *,
+    tool_executor: ShellToolExecutor,
+    use_dspy: bool,
+) -> Agent[Any]:
+    return Agent(
+        name=executor["name"],
+        instructions=build_executor_system_prompt(executor, use_dspy=use_dspy),
+        model=executor["llm"],
+        tools=[build_function_tool(skill, tool_executor=tool_executor) for skill in executor["task"]["skills"]],
+        output_type=build_output_type(executor["task"]["output_schema"], executor["name"]),
+    )
+
+
+def build_executor_system_prompt(executor: dict[str, Any], *, use_dspy: bool = False) -> str:
     task = executor["task"]
     rules = "\n".join(_format_rule(rule) for rule in executor["rules"]) or "None"
     skills = "\n".join(_format_skill(skill) for skill in task["skills"]) or "None"
-    examples = "\n\n".join(_format_example(example) for example in task["examples"]) or "None"
     schema = parse_output_schema(task["output_schema"])
     schema_instruction = describe_output_schema(schema)
+    examples = build_examples_prompt(executor, use_dspy=use_dspy)
 
     return (
         f"You are {executor['persona']}.\n"
         f"Task: {task['name']}\n"
         f"Behavior: {task['behavior']}\n"
         f"Rules:\n{rules}\n\n"
-        f"Available shell skills:\n{skills}\n\n"
+        f"Available tools:\n{skills}\n\n"
         f"Output contract: {schema_instruction}\n\n"
-        "When you need a terminal command, respond with exactly one tool call "
-        "using either <tool_call>command</tool_call> or TOOL_CALL: command.\n"
-        "When you are done, return the final answer directly or wrap it in "
-        "<final>...</final>.\n\n"
-        f"Examples:\n{examples}"
+        "Execution guidance:\n"
+        "1. Use the provided tools instead of inventing shell transcripts.\n"
+        "2. When state is uncertain, inspect first. Check what exists and what is needed before "
+        "running mutating or expensive commands.\n"
+        "3. Use tool outputs to decide the next step.\n"
+        "4. Only return success after the required artifacts are actually created.\n"
+        "5. If work cannot proceed safely, return the structured failure explanation instead of inventing outputs.\n\n"
+        f"{examples}"
     )
 
 
-def build_executor_user_prompt(context: ExecutorContext) -> str:
-    tool_history = "\n\n".join(_format_tool_result(result) for result in context.tool_results)
-    if not tool_history:
-        tool_history = "No tool calls yet."
-    return f"User request:\n{context.user_input}\n\n" f"Tool history:\n{tool_history}"
+def build_examples_prompt(executor: dict[str, Any], *, use_dspy: bool) -> str:
+    examples = executor["task"]["examples"]
+    if not examples:
+        return "Examples:\nNone"
+    heading = "Examples:\n"
+    if use_dspy:
+        heading = (
+            "Examples:\n"
+            "Treat these examples as high-signal task demonstrations. Reuse their patterns when they fit the "
+            "observed state, but still adapt to actual tool results.\n"
+        )
+    return heading + "\n\n".join(_format_example(example) for example in examples)
 
 
-def extract_tool_call(response_text: str) -> ToolCall | None:
-    xml_match = TOOL_CALL_XML_RE.search(response_text)
-    if xml_match:
-        command = xml_match.group(1).strip()
-        if command:
-            return ToolCall(command=command)
+def build_function_tool(skill: dict[str, Any], *, tool_executor: ShellToolExecutor) -> FunctionTool:
+    properties = {
+        argument["name"]: {
+            "type": "string",
+            "description": argument["description"],
+        }
+        for argument in skill["arguments"]
+    }
+    schema = {
+        "type": "object",
+        "properties": properties,
+        "required": list(properties.keys()),
+        "additionalProperties": False,
+    }
 
-    line_match = TOOL_CALL_LINE_RE.search(response_text)
-    if line_match:
-        command = line_match.group(1).strip()
-        if command:
-            return ToolCall(command=command)
+    async def on_invoke_tool(_tool_context: Any, arguments_json: str) -> dict[str, Any]:
+        arguments = json.loads(arguments_json) if arguments_json else {}
+        command = render_skill_command(skill["command"], arguments)
+        result = tool_executor.execute(command)
+        return {
+            "command": result.command,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "exit_code": result.exit_code,
+        }
 
-    return None
+    return FunctionTool(
+        name=skill["name"],
+        description=skill["description"],
+        params_json_schema=schema,
+        on_invoke_tool=on_invoke_tool,
+        strict_json_schema=True,
+    )
 
 
-def extract_final_output(response_text: str) -> str:
-    final_match = FINAL_XML_RE.search(response_text)
-    if final_match:
-        return final_match.group(1).strip()
-    return response_text.strip()
+def render_skill_command(template: str, arguments: dict[str, Any]) -> str:
+    def replace(match: re.Match[str]) -> str:
+        name = match.group(1)
+        if name not in arguments:
+            raise KeyError(f"Missing required skill argument: {name}")
+        return shlex.quote(str(arguments[name]))
+
+    return _PARAM_PATTERN.sub(replace, template)
+
+
+def build_output_type(schema_text: str, executor_name: str) -> type[Any] | None:
+    schema = parse_output_schema(schema_text)
+    if not schema.is_structured:
+        return None
+
+    fields = {}
+    for field_spec in schema.fields:
+        fields[field_spec.name] = (
+            _python_type_for_schema(field_spec.type_name),
+            Field(description=field_spec.name.replace("_", " ")),
+        )
+
+    model_name = f"{executor_name}Output"
+    return create_model(
+        model_name,
+        __config__=ConfigDict(extra="forbid"),
+        **fields,
+    )
 
 
 def load_system_spec(spec_json: str) -> dict[str, Any]:
     return json.loads(spec_json)
-
-
-def create_model_client(
-    *,
-    source_model_path: str | None = None,
-    require_provider: bool = False,
-    use_dspy: bool = False,
-) -> ModelClient:
-    config = load_openai_config(source_model_path=source_model_path)
-    if config is not None:
-        model_cls = DSPyExampleModel if use_dspy else OpenAIChatModel
-        return model_cls(
-            api_key=config["OPENAI_API_KEY"],
-            base_url=config.get("OPENAI_BASE_URL"),
-        )
-
-    if require_provider:
-        raise RuntimeError(missing_provider_message(source_model_path))
-
-    return ExampleDrivenModel()
 
 
 def has_openai_provider_config(source_model_path: str | None = None) -> bool:
@@ -382,13 +321,13 @@ def load_openai_config(source_model_path: str | None = None) -> dict[str, str] |
     file_values: dict[str, str] = {}
     for path in candidate_dotenv_paths(source_model_path):
         if path.exists():
-            file_values.update(dotenv_values(path))
+            file_values.update({key: value for key, value in dotenv_values(path).items() if value is not None})
 
-    api_key = os.environ.get("OPENAI_API_KEY") or file_values.get("OPENAI_API_KEY")
+    api_key = file_values.get("OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
     if not api_key:
         return None
 
-    base_url = os.environ.get("OPENAI_BASE_URL") or file_values.get("OPENAI_BASE_URL")
+    base_url = file_values.get("OPENAI_BASE_URL") or os.environ.get("OPENAI_BASE_URL")
     config: dict[str, str] = {"OPENAI_API_KEY": api_key}
     if base_url:
         config["OPENAI_BASE_URL"] = base_url
@@ -410,64 +349,61 @@ def candidate_dotenv_paths(source_model_path: str | None = None) -> list[Path]:
     return unique
 
 
-def _context_dict(context: ExecutorContext) -> dict[str, Any]:
-    return {
-        "user_input": context.user_input,
-        "executor": context.executor,
-        "tool_results": [
-            {
-                "command": result.command,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "exit_code": result.exit_code,
-            }
-            for result in context.tool_results
-        ],
-    }
+def _extract_tool_results(items: list[Any]) -> list[ToolResult]:
+    results = []
+    for item in items:
+        if not isinstance(item, ToolCallOutputItem):
+            continue
+        output = item.output
+        if not isinstance(output, dict):
+            continue
+        required = {"command", "stdout", "stderr", "exit_code"}
+        if not required.issubset(output):
+            continue
+        results.append(
+            ToolResult(
+                command=str(output["command"]),
+                stdout=str(output["stdout"]),
+                stderr=str(output["stderr"]),
+                exit_code=int(output["exit_code"]),
+            )
+        )
+    return results
 
 
-def _build_fallback_final_response(context: dict[str, Any]) -> str:
-    task = context["executor"]["task"]
-    tool_results = context["tool_results"]
-    schema = parse_output_schema(task["output_schema"])
-
-    if schema.is_structured:
-        payload = {}
-        for field in schema.fields:
-            payload[field.name] = _default_structured_value(field.type_name, tool_results)
-        return json.dumps(payload, indent=2)
-
-    if not tool_results:
-        return "<final>No commands were required for this task.</final>"
-
-    sections = []
-    for result in tool_results:
-        stdout = result["stdout"].strip()
-        stderr = result["stderr"].strip()
-        body = stdout or stderr or f"Command exited with code {result['exit_code']}"
-        sections.append(f"$ {result['command']}\n{body}")
-
-    if task["output_schema"].lower() == "markdown":
-        content = "\n\n".join(f"```text\n{section}\n```" for section in sections)
-        return f"<final>{content}</final>"
-
-    return "<final>" + "\n\n".join(sections) + "</final>"
+def _dump_raw_response(response: Any) -> str:
+    if hasattr(response, "model_dump_json"):
+        return response.model_dump_json(indent=2)
+    try:
+        return json.dumps(response, indent=2)
+    except TypeError:
+        return str(response)
 
 
-def _default_structured_value(type_name: str, tool_results: list[dict[str, Any]]) -> Any:
-    if type_name in {"str", "string"}:
-        if not tool_results:
-            return ""
-        return tool_results[-1]["stdout"].strip() or tool_results[-1]["stderr"].strip()
-    if type_name == "int":
-        return len(tool_results)
-    if type_name == "float":
-        return float(len(tool_results))
-    if type_name == "bool":
-        return any(result["exit_code"] == 0 for result in tool_results)
-    if type_name.startswith("list["):
-        return [result["command"] for result in tool_results]
-    raise ValueError(f"Unsupported structured output type: {type_name}")
+def _stringify_output(output: Any) -> str:
+    if isinstance(output, str):
+        return output
+    try:
+        return json.dumps(output, indent=2)
+    except TypeError:
+        return str(output)
+
+
+def _python_type_for_schema(type_name: str) -> Any:
+    normalized = type_name.lower()
+    if normalized in {"str", "string"}:
+        return str
+    if normalized == "int":
+        return int
+    if normalized == "float":
+        return float
+    if normalized == "bool":
+        return bool
+    list_match = re.fullmatch(r"list\[(str|string|int|float|bool)\]", normalized)
+    if list_match:
+        inner = _python_type_for_schema(list_match.group(1))
+        return list[inner]
+    raise ValueError(f"Unsupported output schema type: {type_name}")
 
 
 def _format_rule(rule: dict[str, Any]) -> str:
@@ -476,48 +412,13 @@ def _format_rule(rule: dict[str, Any]) -> str:
 
 
 def _format_skill(skill: dict[str, Any]) -> str:
-    args = ", ".join(arg["name"] for arg in skill["arguments"]) or "no arguments"
-    return f"- {skill['name']}: {skill['description']} (command: {skill['command']}; args: {args})"
+    args = ", ".join(argument["name"] for argument in skill["arguments"]) or "no arguments"
+    return f"- {skill['name']}: {skill['description']} (args: {args})"
 
 
 def _format_example(example: dict[str, Any]) -> str:
     commands = ", ".join(example["commands"]) or "no commands"
-    return f"Input: {example['input']}\n" f"Commands: {commands}\n" f"Output: {example['output']}"
-
-
-def _build_dspy_demos(dspy_module, executor: dict[str, Any]) -> list[Any]:
-    examples = []
-    for example in executor["task"]["examples"]:
-        tool_history = "No tool calls yet."
-        user_prompt = f"User request:\n{example['input']}\n\nTool history:\n{tool_history}"
-        if example["commands"]:
-            response = f"<tool_call>{example['commands'][0]}</tool_call>"
-        else:
-            response = f"<final>{example['output']}</final>"
-        examples.append(
-            dspy_module.Example(
-                system_prompt=build_executor_system_prompt(executor),
-                user_prompt=user_prompt,
-                response=response,
-            ).with_inputs("system_prompt", "user_prompt")
-        )
-    return examples
-
-
-def _format_tool_result(result: ToolResult) -> str:
-    chunks = [f"$ {result.command}", f"exit_code: {result.exit_code}"]
-    if result.stdout.strip():
-        chunks.append(f"stdout:\n{result.stdout.strip()}")
-    if result.stderr.strip():
-        chunks.append(f"stderr:\n{result.stderr.strip()}")
-    return "\n".join(chunks)
-
-
-def _select_best_example(user_input: str, examples: list[dict[str, Any]]) -> dict[str, Any] | None:
-    if not examples:
-        return None
-    user_tokens = _tokenize(user_input)
-    return max(examples, key=lambda example: _overlap_score(user_tokens, _tokenize(example["input"])))
+    return f"Input: {example['input']}\n" f"Command trajectory: {commands}\n" f"Final output: {example['output']}"
 
 
 def _overlap_score(left: set[str], right: set[str]) -> int:
@@ -526,7 +427,3 @@ def _overlap_score(left: set[str], right: set[str]) -> int:
 
 def _tokenize(text: str) -> set[str]:
     return {token for token in re.findall(r"[a-z0-9_]+", text.lower()) if len(token) > 1}
-
-
-def command_to_argv(command: str) -> list[str]:
-    return shlex.split(command)

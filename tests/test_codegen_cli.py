@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 from agent import cli
 from agent.codegen import render_agent_module
@@ -20,14 +21,38 @@ def test_cli_generate_writes_module(tmp_path, capsys):
     assert str(output_path) in captured.out
 
 
-def test_cli_run_uses_example_driven_model_without_provider(tmp_path, monkeypatch, capsys):
+def test_cli_run_uses_sdk_runtime(tmp_path, monkeypatch, capsys):
     model_path = _write_safe_model(tmp_path / "runtime.agent")
-    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.chdir(tmp_path)
-    cli.main(["run", str(model_path), "--use-examples", "Say hello"])
+    monkeypatch.setenv("OPENAI_API_KEY", "secret")
+    monkeypatch.setattr(
+        "agent.runtime.Runner.run_sync",
+        lambda *args, **kwargs: SimpleNamespace(
+            final_output="hello from runtime",
+            raw_responses=[{"id": "resp_1"}],
+            new_items=[],
+        ),
+    )
+    cli.main(["run", str(model_path), "Say hello"])
     captured = capsys.readouterr()
     assert "hello from runtime" in captured.out
+
+
+def test_cli_verbose_prints_composed_prompt(tmp_path, monkeypatch, capsys):
+    model_path = _write_safe_model(tmp_path / "runtime.agent")
+    monkeypatch.setenv("OPENAI_API_KEY", "secret")
+    monkeypatch.setattr(
+        "agent.runtime.Runner.run_sync",
+        lambda *args, **kwargs: SimpleNamespace(
+            final_output="hello from runtime",
+            raw_responses=[{"id": "resp_1"}],
+            new_items=[],
+        ),
+    )
+    cli.main(["run", str(model_path), "--verbose", "Say hello"])
+    captured = capsys.readouterr()
+    assert "[system_prompt]" in captured.out
+    assert "[user_input]" in captured.out
+    assert "Say hello" in captured.out
 
 
 def test_cli_legacy_print_ir(capsys):
