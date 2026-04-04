@@ -220,7 +220,7 @@ def test_agent_runtime_single_executor_runs_directly(monkeypatch):
     prompt_ir = build_prompt_ir(system)
     captured = {}
 
-    def fake_run_sync(agent, user_input, *, run_config, hooks=None):
+    def fake_run_sync(agent, user_input, *, run_config, hooks=None, max_turns=None):
         captured["agent_name"] = agent.name
         return SimpleNamespace(
             final_output={"status": "success", "message": "ok", "artifact_path": "out.svg",
@@ -301,7 +301,7 @@ def test_agent_runtime_multi_executor_starts_with_planner(monkeypatch):
     prompt_ir = build_prompt_ir(system)
     captured = {}
 
-    def fake_run_sync(agent, user_input, *, run_config, hooks=None):
+    def fake_run_sync(agent, user_input, *, run_config, hooks=None, max_turns=None):
         captured["agent_name"] = agent.name
         # Simulate SDK handoff: set hooks as if WebResearch was chosen
         if hooks is not None:
@@ -344,7 +344,7 @@ def test_agent_runtime_multi_executor_falls_back_when_no_handoff(monkeypatch):
     system = parse_model("models/example_full.agent")
     prompt_ir = build_prompt_ir(system)
 
-    def fake_run_sync(agent, user_input, *, run_config, hooks=None):
+    def fake_run_sync(agent, user_input, *, run_config, hooks=None, max_turns=None):
         # Do NOT set hooks.executor_name — simulates planner returning direct text
         return SimpleNamespace(final_output="direct answer", raw_responses=[], new_items=[])
 

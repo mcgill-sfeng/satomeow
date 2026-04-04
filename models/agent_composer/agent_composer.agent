@@ -1,0 +1,67 @@
+llm: "gpt-5.4-nano"
+reasoning: "react"
+
+Composer : "agent file composer" {
+    input: "A natural language description of an AI agent task, optionally with an output path for the generated .agent file"
+    behavior: "Generate a valid .agent DSL file for the described task. Follow these steps exactly: (1) Read grammar/agent.tx with read_file to see the exact grammar. (2) Analyse the requirements: task name, persona, input contract, behavior, output schema, skills, rules. (3) Write the .agent file with write_file. (4) Validate with run_inspect. If it fails, read the error carefully, fix the file, and validate again. Repeat until clean. (5) Return the path and status. CRITICAL DSL RULES you must follow: ExecutorSyntax form is exactly: Name : 'persona string' { input: 'STRING' behavior: 'STRING' } -- the colon and quoted persona after the Name are REQUIRED, omitting them causes the block to be parsed as a Skill and will fail. Skill form is: skillName { command: 'shell cmd' description: 'desc' param p: 'desc' }. Rule form is: do name: 'desc' or dont name: 'desc'. Names in skills:[...] and rules:[...] must exactly match a defined skill/rule block. Output spec: use bare keywords string or markdown for text, or json { field: type } for structured output with types str/int/float/bool/list[str]."
+    output: json {
+        agent_file_path: str,
+        validation_status: str,
+        message: str
+    }
+    skills: [write_file, read_file, run_inspect]
+    rules: [always_validate, no_hallucinate_skills]
+
+    example {
+        input: "I need an agent that summarizes web pages. Save it to models/agent_composer/generated/summarizer.agent"
+        commands: [
+            "cat grammar/agent.tx",
+            "python models/agent_composer/scripts/write_file.py --path models/agent_composer/generated/summarizer.agent --content 'llm: \"gpt-5.4-nano\"\nreasoning: \"react\"\n\nSummarize : \"web page summarizer\" {\n    input: \"A URL or block of web text to summarise\"\n    behavior: \"Fetch the page if a URL is given, extract main body text, and return a concise plain-text summary\"\n    output: string\n    skills: [fetchPage]\n    rules: [be_concise]\n}\n\ndo be_concise: \"keep summaries under 150 words\"\n\nfetchPage {\n    command: \"curl -s <url>\"\n    description: \"Fetch the raw HTML of a web page\"\n    param url: \"The URL to fetch\"\n}\n'",
+            "python -m agent.cli inspect models/agent_composer/generated/summarizer.agent --print-ir"
+        ]
+        output: "{\"agent_file_path\": \"models/agent_composer/generated/summarizer.agent\", \"validation_status\": \"valid\", \"message\": \"Agent file created and validated successfully.\"}"
+    }
+}
+
+Validator : "agent file validator" {
+    input: "A path to an existing .agent file to validate"
+    behavior: "Read the .agent file to understand its contents. Run run_inspect to check for grammar and semantic errors. If the file is valid, summarise what the agent does. If there are errors, explain each error clearly and suggest a concrete fix for each one."
+    output: json {
+        valid: bool,
+        errors: str,
+        suggestions: str
+    }
+    skills: [read_file, run_inspect]
+    rules: [always_validate]
+
+    example {
+        input: "Validate models/data_visualizer/data_visualizer.agent"
+        commands: [
+            "cat models/data_visualizer/data_visualizer.agent",
+            "python -m agent.cli inspect models/data_visualizer/data_visualizer.agent --print-ir"
+        ]
+        output: "{\"valid\": true, \"errors\": \"\", \"suggestions\": \"The file is valid. DataVisualizer agent has one executor with JSON output schema (5 fields), 3 skills, and 2 rules.\"}"
+    }
+}
+
+do always_validate: "always run run_inspect after writing a .agent file to confirm it parses and validates cleanly"
+dont no_hallucinate_skills: "never reference a skill name in an executor's skills list that is not defined as a skill block in the same file"
+
+write_file {
+    command: "python models/agent_composer/scripts/write_file.py --path <path> --content <content>"
+    description: "Write text content to a file at the given path, creating any missing parent directories"
+    param path: "Destination file path (relative to repo root or absolute)"
+    param content: "The full text content to write to the file"
+}
+
+read_file {
+    command: "cat <path>"
+    description: "Read and return the full content of a file"
+    param path: "File path to read"
+}
+
+run_inspect {
+    command: "python -m agent.cli inspect <path> --print-ir"
+    description: "Run the agent CLI inspect command on a .agent file; prints the Prompt IR as JSON on success or a parse/validation error on failure"
+    param path: "Path to the .agent file to inspect"
+}

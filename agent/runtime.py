@@ -168,12 +168,14 @@ class AgentSystemRuntime:
         source_model_path: str | None = None,
         require_provider: bool = False,
         use_dspy: bool = False,
+        max_turns: int = 50,
     ):
         self.system_spec = system_spec
         self.tool_executor = tool_executor or ShellToolExecutor()
         self.source_model_path = source_model_path
         self.require_provider = require_provider
         self.use_dspy = use_dspy
+        self.max_turns = max_turns
 
     def run(self, user_input: str) -> RunResult:
         executors = self.system_spec["executors"]
@@ -184,7 +186,7 @@ class AgentSystemRuntime:
             executor = executors[0]
             hooks.executor_name = executor["name"]
             agent = build_openai_agent(executor, tool_executor=self.tool_executor, use_dspy=self.use_dspy)
-            sdk_result = Runner.run_sync(agent, user_input, run_config=run_config, hooks=hooks)
+            sdk_result = Runner.run_sync(agent, user_input, run_config=run_config, hooks=hooks, max_turns=self.max_turns)
         else:
             executor_agents = {
                 e["name"]: build_openai_agent(e, tool_executor=self.tool_executor, use_dspy=self.use_dspy)
@@ -192,7 +194,7 @@ class AgentSystemRuntime:
             }
             planner_llm = self.system_spec.get("planner", {}).get("llm") or executors[0]["llm"]
             planner = build_planner_agent(executors, executor_agents, hooks, planner_llm)
-            sdk_result = Runner.run_sync(planner, user_input, run_config=run_config, hooks=hooks)
+            sdk_result = Runner.run_sync(planner, user_input, run_config=run_config, hooks=hooks, max_turns=self.max_turns)
 
             if hooks.executor_name is None:
                 # Planner did not hand off — fall back to first executor gracefully.
