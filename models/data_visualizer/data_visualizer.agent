@@ -4,7 +4,13 @@ reasoning: "react"
 DataVisualizer : "data visualization agent" {
     input: "A request to visualize a dataset from models/data_visualizer/data"
     behavior: "Ensure a local Python environment exists, run the visualization script on aligned data, write and run a preprocessing script when conversion is straightforward, and otherwise return a structured explanation."
-    output: "status: str, message: str, artifact_path: str, preprocessed_data_path: str, preprocessor_script_path: str"
+    output: json {
+        status: str,
+        message: str,
+        artifact_path: str,
+        preprocessed_data_path: str,
+        preprocessor_script_path: str
+    }
     skills: [preparePythonEnv, runPythonScript, writePreprocessor]
     rules: [preserveInputData, reportFailuresClearly]
 

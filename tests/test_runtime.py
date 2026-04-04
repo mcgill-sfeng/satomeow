@@ -11,15 +11,24 @@ from agent.parser import parse_model
 from agent.runtime import (
     AgentSystemRuntime,
     ShellToolExecutor,
+    _HandoffCtx,
+    _RoutingHooks,
     build_examples_prompt,
     build_executor_system_prompt,
     build_function_tool,
     build_openai_agent,
     build_output_type,
+    build_planner_agent,
+    build_planner_prompt,
     load_openai_config,
     render_skill_command,
 )
 from agent.schema import coerce_structured_output, parse_output_schema
+
+
+# ---------------------------------------------------------------------------
+# Shell / tool primitives
+# ---------------------------------------------------------------------------
 
 
 def test_shell_tool_executor_runs_command():
@@ -59,10 +68,26 @@ def test_build_function_tool_executes_shell_skill():
 
 
 def test_build_output_type_for_structured_schema():
-    output_type = build_output_type("answer: str, count: int, ok: bool", "Summarizer")
+    fields = [
+        {"name": "answer", "type": "str"},
+        {"name": "count", "type": "int"},
+        {"name": "ok", "type": "bool"},
+    ]
+    output_type = build_output_type("json", fields, "Summarizer")
     assert output_type is not None
     instance = output_type(answer="done", count=2, ok=True)
     assert instance.model_dump() == {"answer": "done", "count": 2, "ok": True}
+
+
+def test_build_output_type_returns_none_for_non_json():
+    assert build_output_type("string", [], "Summarizer") is None
+    assert build_output_type("markdown", [], "Summarizer") is None
+    assert build_output_type("toml", [{"name": "x", "type": "str"}], "Summarizer") is None
+
+
+# ---------------------------------------------------------------------------
+# Prompt builders
+# ---------------------------------------------------------------------------
 
 
 def test_build_executor_system_prompt_mentions_inspect_first():
@@ -94,15 +119,194 @@ def test_build_openai_agent_compiles_tools_and_output_type():
     assert agent.output_type is not None
 
 
-def test_agent_runtime_uses_sdk_runner(monkeypatch):
+# ---------------------------------------------------------------------------
+# Handoff-based planner
+# ---------------------------------------------------------------------------
+
+
+def _make_executors_ir():
+    """Two-executor IR fixture for planner tests."""
+    return [
+        {
+            "name": "WebResearch",
+            "llm": "gpt-4o",
+            "persona": "research agent",
+            "rules": [],
+            "task": {
+                "name": "WebResearch",
+                "input_description": "A user question requiring web research",
+                "behavior": "Search, extract, and summarize relevant information",
+                "output_format": "string",
+                "output_fields": [],
+                "examples": [],
+                "skills": [],
+            },
+        },
+        {
+            "name": "TextEditor",
+            "llm": "gpt-4o",
+            "persona": "editor agent",
+            "rules": [],
+            "task": {
+                "name": "TextEditor",
+                "input_description": "Text to edit with instructions",
+                "behavior": "Apply edits based on user instructions",
+                "output_format": "string",
+                "output_fields": [],
+                "examples": [],
+                "skills": [],
+            },
+        },
+    ]
+
+
+def test_planner_prompt_lists_all_executors():
+    executors = _make_executors_ir()
+    prompt = build_planner_prompt(executors)
+    assert "WebResearch" in prompt
+    assert "TextEditor" in prompt
+    assert "transfer" in prompt.lower()
+
+
+def test_build_planner_agent_has_handoffs_for_each_executor():
+    executors = _make_executors_ir()
+    hooks = _RoutingHooks()
+    executor_agents = {
+        e["name"]: build_openai_agent(e, tool_executor=ShellToolExecutor(), use_dspy=False)
+        for e in executors
+    }
+    planner = build_planner_agent(executors, executor_agents, hooks, planner_llm="gpt-4o")
+    assert planner.name == "Planner"
+    handoff_names = {h.tool_name for h in planner.handoffs}
+    assert "transfer_to_webresearch" in handoff_names
+    assert "transfer_to_texteditor" in handoff_names
+
+
+def test_routing_hooks_captures_executor_name():
+    hooks = _RoutingHooks()
+    assert hooks.executor_name is None
+    assert "single executor" in hooks.planner_reason.lower()
+
+    # Simulate what the SDK calls on handoff
+    import asyncio
+
+    async def _sim():
+        from unittest.mock import MagicMock
+        from_agent = MagicMock()
+        from_agent.name = "Planner"
+        to_agent = MagicMock()
+        to_agent.name = "WebResearch"
+        await hooks.on_handoff(None, from_agent, to_agent)
+
+    asyncio.run(_sim())
+    assert hooks.executor_name == "WebResearch"
+
+
+def test_handoff_ctx_schema():
+    ctx = _HandoffCtx(reason="User asked for research.")
+    assert ctx.reason == "User asked for research."
+    schema = _HandoffCtx.model_json_schema()
+    assert "reason" in schema["properties"]
+
+
+# ---------------------------------------------------------------------------
+# AgentSystemRuntime — single executor
+# ---------------------------------------------------------------------------
+
+
+def test_agent_runtime_single_executor_runs_directly(monkeypatch):
+    """Single-executor: Runner.run_sync is called with the executor agent (no planner)."""
+    system = parse_model("models/data_visualizer/data_visualizer.agent")
+    prompt_ir = build_prompt_ir(system)
+    captured = {}
+
+    def fake_run_sync(agent, user_input, *, run_config, hooks=None):
+        captured["agent_name"] = agent.name
+        return SimpleNamespace(
+            final_output={"status": "success", "message": "ok", "artifact_path": "out.svg",
+                          "preprocessed_data_path": "", "preprocessor_script_path": ""},
+            raw_responses=[],
+            new_items=[],
+        )
+
+    monkeypatch.setattr("agent.runtime.Runner.run_sync", fake_run_sync)
+    monkeypatch.setenv("OPENAI_API_KEY", "secret")
+
+    runtime = AgentSystemRuntime(prompt_ir)
+    result = runtime.run("Visualize aligned_sales.json")
+
+    assert captured["agent_name"] == "DataVisualizer"
+    assert result.executor_name == "DataVisualizer"
+    assert result.planner_reason == "Direct execution (single executor)."
+
+
+def test_agent_runtime_coerces_structured_output(monkeypatch):
+    system_spec = {
+        "planner": {"reasoning_strategy": "react", "llm": "test", "persona": "planner", "rules": []},
+        "executors": [
+            {
+                "name": "Summarizer",
+                "reasoning_strategy": "react",
+                "llm": "test",
+                "persona": "summarizer",
+                "rules": [],
+                "task": {
+                    "name": "Summarizer",
+                    "input_description": "summarize documents",
+                    "behavior": "summarize",
+                    "output_format": "json",
+                    "output_fields": [
+                        {"name": "answer", "type": "str"},
+                        {"name": "commands_run", "type": "int"},
+                        {"name": "success", "type": "bool"},
+                        {"name": "commands", "type": "list[str]"},
+                    ],
+                    "examples": [],
+                    "skills": [],
+                },
+            }
+        ],
+        "rules": [],
+        "skills": [],
+    }
+
+    monkeypatch.setattr(
+        "agent.runtime.Runner.run_sync",
+        lambda *args, **kwargs: SimpleNamespace(
+            final_output={"answer": "done", "commands_run": 1, "success": True, "commands": ["printf 'hello'"]},
+            raw_responses=[],
+            new_items=[],
+        ),
+    )
+    monkeypatch.setenv("OPENAI_API_KEY", "secret")
+
+    runtime = AgentSystemRuntime(system_spec)
+    result = runtime.run("summarize this")
+    assert result.output == {
+        "answer": "done",
+        "commands_run": 1,
+        "success": True,
+        "commands": ["printf 'hello'"],
+    }
+
+
+# ---------------------------------------------------------------------------
+# AgentSystemRuntime — multi executor (handoff routing)
+# ---------------------------------------------------------------------------
+
+
+def test_agent_runtime_multi_executor_starts_with_planner(monkeypatch):
+    """Multi-executor: Runner.run_sync is called with the Planner agent."""
     system = parse_model("models/example_full.agent")
     prompt_ir = build_prompt_ir(system)
     captured = {}
 
-    def fake_run_sync(agent, user_input, run_config):
-        captured["agent"] = agent
-        captured["user_input"] = user_input
-        captured["run_config"] = run_config
+    def fake_run_sync(agent, user_input, *, run_config, hooks=None):
+        captured["agent_name"] = agent.name
+        # Simulate SDK handoff: set hooks as if WebResearch was chosen
+        if hooks is not None:
+            hooks.executor_name = "WebResearch"
+            hooks.planner_reason = "User is asking for web research."
         return SimpleNamespace(
             final_output="## Summary\n\nsource line",
             raw_responses=[{"id": "resp_1"}],
@@ -123,70 +327,39 @@ def test_agent_runtime_uses_sdk_runner(monkeypatch):
     monkeypatch.setattr("agent.runtime.Runner.run_sync", fake_run_sync)
     monkeypatch.setenv("OPENAI_API_KEY", "secret")
 
-    runtime = AgentSystemRuntime(prompt_ir, require_provider=True)
+    runtime = AgentSystemRuntime(prompt_ir)
     result = runtime.run("Find a source")
 
+    assert captured["agent_name"] == "Planner"
     assert result.executor_name == "WebResearch"
+    assert result.planner_reason == "User is asking for web research."
     assert result.output == "## Summary\n\nsource line"
     assert result.tool_results[0].stdout == "source line"
     assert result.user_input == "Find a source"
     assert "You are research agent." in result.system_prompt
-    assert captured["user_input"] == "Find a source"
-    assert captured["agent"].name == "WebResearch"
 
 
-def test_agent_runtime_coerces_structured_output(monkeypatch):
-    system_spec = {
-        "planner": {
-            "reasoning_strategy": "react",
-            "llm": "test",
-            "persona": "planner",
-            "rules": [],
-        },
-        "executors": [
-            {
-                "name": "Summarizer",
-                "reasoning_strategy": "react",
-                "llm": "test",
-                "persona": "summarizer",
-                "rules": [],
-                "task": {
-                    "name": "Summarizer",
-                    "input_description": "summarize documents",
-                    "behavior": "summarize",
-                    "output_schema": "answer: str, commands_run: int, success: bool, commands: list[str]",
-                    "examples": [],
-                    "skills": [],
-                },
-            }
-        ],
-        "rules": [],
-        "skills": [],
-    }
+def test_agent_runtime_multi_executor_falls_back_when_no_handoff(monkeypatch):
+    """If SDK never triggers a handoff, runtime defaults to first executor."""
+    system = parse_model("models/example_full.agent")
+    prompt_ir = build_prompt_ir(system)
 
-    monkeypatch.setattr(
-        "agent.runtime.Runner.run_sync",
-        lambda *args, **kwargs: SimpleNamespace(
-            final_output={
-                "answer": "done",
-                "commands_run": 1,
-                "success": True,
-                "commands": ["printf 'hello'"],
-            },
-            raw_responses=[],
-            new_items=[],
-        ),
-    )
+    def fake_run_sync(agent, user_input, *, run_config, hooks=None):
+        # Do NOT set hooks.executor_name — simulates planner returning direct text
+        return SimpleNamespace(final_output="direct answer", raw_responses=[], new_items=[])
+
+    monkeypatch.setattr("agent.runtime.Runner.run_sync", fake_run_sync)
     monkeypatch.setenv("OPENAI_API_KEY", "secret")
 
-    runtime = AgentSystemRuntime(system_spec, require_provider=True)
-    result = runtime.run("summarize this")
-    assert result.output == {
-        "answer": "done",
-        "commands_run": 1,
-        "success": True,
-        "commands": ["printf 'hello'"],
-    }
+    runtime = AgentSystemRuntime(prompt_ir)
+    result = runtime.run("something")
+    assert result.executor_name == prompt_ir["executors"][0]["name"]
+    assert "defaulted" in result.planner_reason.lower()
+
+
+# ---------------------------------------------------------------------------
+# Provider config
+# ---------------------------------------------------------------------------
 
 
 def test_parse_output_schema_for_structured_types():
@@ -249,7 +422,7 @@ def test_load_openai_config_prefers_dotenv_over_environment(tmp_path, monkeypatc
     }
 
 
-def test_runtime_requires_provider(tmp_path, monkeypatch):
+def test_runtime_raises_without_provider(tmp_path, monkeypatch):
     system = parse_model("models/example_full.agent")
     prompt_ir = build_prompt_ir(system)
     model_path = tmp_path / "demo.agent"
@@ -258,6 +431,6 @@ def test_runtime_requires_provider(tmp_path, monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.chdir(tmp_path)
 
-    runtime = AgentSystemRuntime(prompt_ir, source_model_path=str(model_path), require_provider=True)
+    runtime = AgentSystemRuntime(prompt_ir, source_model_path=str(model_path))
     with pytest.raises(RuntimeError, match="No OpenAI provider configuration found"):
         runtime.run("Find a source")

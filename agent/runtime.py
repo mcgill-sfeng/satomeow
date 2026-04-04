@@ -9,16 +9,23 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from agents import Agent, FunctionTool, RunConfig, Runner
+from agents import Agent, FunctionTool, RunConfig, Runner, handoff
 from agents.items import ToolCallOutputItem
+from agents.lifecycle import RunHooksBase
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
+from agents.run_context import RunContextWrapper
 from dotenv import dotenv_values
 from openai import AsyncOpenAI
-from pydantic import ConfigDict, Field, create_model
+from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from agent.schema import coerce_structured_output, describe_output_schema, parse_output_schema
 
 _PARAM_PATTERN = re.compile(r"<([a-zA-Z_][a-zA-Z0-9_]*)>")
+
+
+# ---------------------------------------------------------------------------
+# Data classes
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -30,22 +37,21 @@ class ToolResult:
 
 
 @dataclass(frozen=True)
-class PlannerDecision:
-    executor_name: str
-    reason: str
-
-
-@dataclass(frozen=True)
 class RunResult:
     executor_name: str
     planner_reason: str
     output: Any
-    output_schema: str
+    output_format: str
     raw_response: str
     system_prompt: str
     user_input: str
     raw_responses: tuple[str, ...] = ()
     tool_results: tuple[ToolResult, ...] = ()
+
+
+# ---------------------------------------------------------------------------
+# Shell tool executor
+# ---------------------------------------------------------------------------
 
 
 class ShellToolExecutor:
@@ -68,29 +74,89 @@ class ShellToolExecutor:
         )
 
 
-class HeuristicPlanner:
-    def choose_executor(self, user_input: str, executors: list[dict[str, Any]]) -> PlannerDecision:
-        best_executor = None
-        best_score = -1
+# ---------------------------------------------------------------------------
+# Handoff-based planner internals
+# ---------------------------------------------------------------------------
 
-        user_tokens = _tokenize(user_input)
-        for executor in executors:
-            task = executor["task"]
-            score = 0
-            score += _overlap_score(user_tokens, _tokenize(task["name"])) * 5
-            score += _overlap_score(user_tokens, _tokenize(task["input_description"])) * 4
-            score += _overlap_score(user_tokens, _tokenize(task["behavior"])) * 3
-            for example in task["examples"]:
-                score += _overlap_score(user_tokens, _tokenize(example["input"]))
-            if score > best_score:
-                best_score = score
-                best_executor = executor
 
-        chosen = best_executor or executors[0]
-        return PlannerDecision(
-            executor_name=chosen["name"],
-            reason=f"Selected executor '{chosen['name']}' using heuristic task matching.",
+class _HandoffCtx(BaseModel):
+    """Structured payload the LLM passes when invoking a transfer function."""
+
+    reason: str
+
+
+class _RoutingHooks(RunHooksBase):
+    """Captures which executor was selected and why during a multi-agent run."""
+
+    def __init__(self) -> None:
+        self.executor_name: str | None = None
+        self.planner_reason: str = "Direct execution (single executor)."
+
+    async def on_handoff(
+        self,
+        context: RunContextWrapper[Any],
+        from_agent: Any,
+        to_agent: Any,
+    ) -> None:
+        self.executor_name = to_agent.name
+
+
+def build_planner_prompt(executors: list[dict[str, Any]]) -> str:
+    lines = [
+        "You are a task router for a multi-agent system.",
+        "Your only job is to immediately transfer the user's request to the most appropriate agent.",
+        "Do not answer the user directly — always call a transfer function.",
+        "",
+        "Agents:",
+    ]
+    for executor in executors:
+        task = executor.get("task") or {}
+        lines.append(
+            f"- {executor['name']}: {executor.get('persona', '')}. "
+            f"Handles: {task.get('input_description', 'general tasks')}. "
+            f"Produces: {_format_output_spec(task)}."
         )
+    lines += [
+        "",
+        "When transferring, include a concise reason explaining why this agent is the best fit.",
+    ]
+    return "\n".join(lines)
+
+
+def build_planner_agent(
+    executors: list[dict[str, Any]],
+    executor_agents: dict[str, Agent[Any]],
+    hooks: _RoutingHooks,
+    planner_llm: str,
+) -> Agent[Any]:
+    """Build a static routing Agent whose only role is to hand off to the right executor."""
+
+    def _make_on_handoff(name: str):
+        async def _cb(_ctx: RunContextWrapper[Any], args: _HandoffCtx) -> None:
+            hooks.planner_reason = args.reason
+
+        return _cb
+
+    handoffs = [
+        handoff(
+            executor_agents[executor["name"]],
+            on_handoff=_make_on_handoff(executor["name"]),
+            input_type=_HandoffCtx,
+        )
+        for executor in executors
+    ]
+
+    return Agent(
+        name="Planner",
+        instructions=build_planner_prompt(executors),
+        model=planner_llm,
+        handoffs=handoffs,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Runtime
+# ---------------------------------------------------------------------------
 
 
 class AgentSystemRuntime:
@@ -99,61 +165,72 @@ class AgentSystemRuntime:
         system_spec: dict[str, Any],
         *,
         tool_executor: ShellToolExecutor | None = None,
-        planner: HeuristicPlanner | None = None,
         source_model_path: str | None = None,
         require_provider: bool = False,
         use_dspy: bool = False,
     ):
         self.system_spec = system_spec
         self.tool_executor = tool_executor or ShellToolExecutor()
-        self.planner = planner or HeuristicPlanner()
         self.source_model_path = source_model_path
         self.require_provider = require_provider
         self.use_dspy = use_dspy
 
     def run(self, user_input: str) -> RunResult:
-        decision = self.planner.choose_executor(user_input, self.system_spec["executors"])
-        executor = self._find_executor(decision.executor_name)
-        run_config = self._build_run_config(executor)
-        system_prompt = build_executor_system_prompt(executor, use_dspy=self.use_dspy)
-        agent = build_openai_agent(
-            executor,
-            tool_executor=self.tool_executor,
-            use_dspy=self.use_dspy,
-        )
-        sdk_result = Runner.run_sync(
-            agent,
-            user_input,
-            run_config=run_config,
-        )
-        return self._finalize_result(decision, executor, sdk_result, system_prompt, user_input)
+        executors = self.system_spec["executors"]
+        run_config = self._build_run_config()
+        hooks = _RoutingHooks()
 
-    def _build_run_config(self, executor: dict[str, Any]) -> RunConfig:
+        if len(executors) == 1:
+            executor = executors[0]
+            hooks.executor_name = executor["name"]
+            agent = build_openai_agent(executor, tool_executor=self.tool_executor, use_dspy=self.use_dspy)
+            sdk_result = Runner.run_sync(agent, user_input, run_config=run_config, hooks=hooks)
+        else:
+            executor_agents = {
+                e["name"]: build_openai_agent(e, tool_executor=self.tool_executor, use_dspy=self.use_dspy)
+                for e in executors
+            }
+            planner_llm = self.system_spec.get("planner", {}).get("llm") or executors[0]["llm"]
+            planner = build_planner_agent(executors, executor_agents, hooks, planner_llm)
+            sdk_result = Runner.run_sync(planner, user_input, run_config=run_config, hooks=hooks)
+
+            if hooks.executor_name is None:
+                # Planner did not hand off — fall back to first executor gracefully.
+                hooks.executor_name = executors[0]["name"]
+                hooks.planner_reason = "Planner did not hand off; defaulted to first executor."
+
+        executor = self._find_executor(hooks.executor_name)
+        return self._finalize_result(hooks, executor, sdk_result, user_input)
+
+    def _build_run_config(self) -> RunConfig:
         config = load_openai_config(source_model_path=self.source_model_path)
         if config is None:
-            if self.require_provider:
-                raise RuntimeError(missing_provider_message(self.source_model_path))
             raise RuntimeError(missing_provider_message(self.source_model_path))
 
         client = AsyncOpenAI(
             api_key=config["OPENAI_API_KEY"],
             base_url=config.get("OPENAI_BASE_URL"),
         )
+        planner_llm = self.system_spec.get("planner", {}).get("llm") or "gpt-4o-mini"
         return RunConfig(
-            model=OpenAIChatCompletionsModel(executor["llm"], openai_client=client),
+            model=OpenAIChatCompletionsModel(planner_llm, openai_client=client),
             tracing_disabled=True,
-            workflow_name=f"{executor['name']} runtime",
+            workflow_name=f"{self.system_spec.get('planner', {}).get('persona', 'agent')} runtime",
         )
 
     def _finalize_result(
         self,
-        decision: PlannerDecision,
+        hooks: _RoutingHooks,
         executor: dict[str, Any],
         sdk_result: Any,
-        system_prompt: str,
         user_input: str,
     ) -> RunResult:
-        schema = parse_output_schema(executor["task"]["output_schema"])
+        system_prompt = build_executor_system_prompt(executor, use_dspy=self.use_dspy)
+        task = executor["task"]
+        schema = parse_output_schema(
+            output_format=task["output_format"],
+            output_fields=task["output_fields"],
+        )
         raw_responses = tuple(_dump_raw_response(response) for response in sdk_result.raw_responses)
         output = sdk_result.final_output
         if hasattr(output, "model_dump"):
@@ -163,10 +240,10 @@ class AgentSystemRuntime:
         tool_results = tuple(_extract_tool_results(sdk_result.new_items))
         raw_response = raw_responses[-1] if raw_responses else _stringify_output(output)
         return RunResult(
-            executor_name=decision.executor_name,
-            planner_reason=decision.reason,
+            executor_name=hooks.executor_name,
+            planner_reason=hooks.planner_reason,
             output=output,
-            output_schema=executor["task"]["output_schema"],
+            output_format=task["output_format"],
             raw_response=raw_response,
             system_prompt=system_prompt,
             user_input=user_input,
@@ -181,6 +258,11 @@ class AgentSystemRuntime:
         raise KeyError(f"Unknown executor name: {executor_name}")
 
 
+# ---------------------------------------------------------------------------
+# Agent / prompt builders
+# ---------------------------------------------------------------------------
+
+
 def build_openai_agent(
     executor: dict[str, Any],
     *,
@@ -192,7 +274,7 @@ def build_openai_agent(
         instructions=build_executor_system_prompt(executor, use_dspy=use_dspy),
         model=executor["llm"],
         tools=[build_function_tool(skill, tool_executor=tool_executor) for skill in executor["task"]["skills"]],
-        output_type=build_output_type(executor["task"]["output_schema"], executor["name"]),
+        output_type=build_output_type(executor["task"]["output_format"], executor["task"]["output_fields"], executor["name"]),
     )
 
 
@@ -200,7 +282,7 @@ def build_executor_system_prompt(executor: dict[str, Any], *, use_dspy: bool = F
     task = executor["task"]
     rules = "\n".join(_format_rule(rule) for rule in executor["rules"]) or "None"
     skills = "\n".join(_format_skill(skill) for skill in task["skills"]) or "None"
-    schema = parse_output_schema(task["output_schema"])
+    schema = parse_output_schema(output_format=task["output_format"], output_fields=task["output_fields"])
     schema_instruction = describe_output_schema(schema)
     examples = build_examples_prompt(executor, use_dspy=use_dspy)
 
@@ -281,11 +363,12 @@ def render_skill_command(template: str, arguments: dict[str, Any]) -> str:
     return _PARAM_PATTERN.sub(replace, template)
 
 
-def build_output_type(schema_text: str, executor_name: str) -> type[Any] | None:
-    schema = parse_output_schema(schema_text)
-    if not schema.is_structured:
+def build_output_type(output_format: str, output_fields: list[dict], executor_name: str) -> type[Any] | None:
+    """Build a Pydantic model for json-format outputs; return None for text formats."""
+    if output_format != "json":
         return None
 
+    schema = parse_output_schema(output_format=output_format, output_fields=output_fields)
     fields = {}
     for field_spec in schema.fields:
         fields[field_spec.name] = (
@@ -299,6 +382,11 @@ def build_output_type(schema_text: str, executor_name: str) -> type[Any] | None:
         __config__=ConfigDict(extra="forbid"),
         **fields,
     )
+
+
+# ---------------------------------------------------------------------------
+# Provider config
+# ---------------------------------------------------------------------------
 
 
 def load_system_spec(spec_json: str) -> dict[str, Any]:
@@ -347,6 +435,11 @@ def candidate_dotenv_paths(source_model_path: str | None = None) -> list[Path]:
             seen.add(resolved)
             unique.append(candidate)
     return unique
+
+
+# ---------------------------------------------------------------------------
+# Private helpers
+# ---------------------------------------------------------------------------
 
 
 def _extract_tool_results(items: list[Any]) -> list[ToolResult]:
@@ -399,7 +492,7 @@ def _python_type_for_schema(type_name: str) -> Any:
         return float
     if normalized == "bool":
         return bool
-    list_match = re.fullmatch(r"list\[(str|string|int|float|bool)\]", normalized)
+    list_match = re.fullmatch(r"list\[(str|string|int|float|bool)]", normalized)
     if list_match:
         inner = _python_type_for_schema(list_match.group(1))
         return list[inner]
@@ -416,14 +509,15 @@ def _format_skill(skill: dict[str, Any]) -> str:
     return f"- {skill['name']}: {skill['description']} (args: {args})"
 
 
+def _format_output_spec(task: dict[str, Any]) -> str:
+    fmt = task.get("output_format", "string")
+    fields = task.get("output_fields", [])
+    if not fields:
+        return fmt
+    parts = ", ".join(f"{f['name']}: {f['type']}" for f in fields)
+    return f"{fmt} {{ {parts} }}"
+
+
 def _format_example(example: dict[str, Any]) -> str:
     commands = ", ".join(example["commands"]) or "no commands"
     return f"Input: {example['input']}\n" f"Command trajectory: {commands}\n" f"Final output: {example['output']}"
-
-
-def _overlap_score(left: set[str], right: set[str]) -> int:
-    return len(left & right)
-
-
-def _tokenize(text: str) -> set[str]:
-    return {token for token in re.findall(r"[a-z0-9_]+", text.lower()) if len(token) > 1}

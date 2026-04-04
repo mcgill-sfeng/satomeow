@@ -170,7 +170,7 @@ def _run_generated_agent(args):
                     "executor_name": result.executor_name,
                     "planner_reason": result.planner_reason,
                     "output": result.output,
-                    "output_schema": result.output_schema,
+                    "output_format": result.output_format,
                     "raw_response": result.raw_response,
                     "system_prompt": result.system_prompt,
                     "user_input": result.user_input,

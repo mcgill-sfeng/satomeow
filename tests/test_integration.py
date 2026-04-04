@@ -71,7 +71,8 @@ def test_prompt_ir_structure():
 def test_prompt_ir_output_schema():
     system = parse_model("models/example_full.agent")
     ir = build_prompt_ir(system)
-    assert ir["executors"][0]["task"]["output_schema"] == "markdown"
+    assert ir["executors"][0]["task"]["output_format"] == "markdown"
+    assert ir["executors"][0]["task"]["output_fields"] == []
 
 
 def test_prompt_ir_skills():

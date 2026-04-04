@@ -69,7 +69,7 @@ reasoning: "react"
 Hello : "shell agent" {
     input: "Greeting request"
     behavior: "print a greeting"
-    output: "text"
+    output: string
 
     example {
         input: "Say hello"

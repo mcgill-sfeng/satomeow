@@ -58,8 +58,9 @@ def validate_task(task):
     check_required(task, "inputDescription")
     check_required(task, "behavior")
 
-    if task.outputSchema is None:
-        task.outputSchema = "string"
+    if task.outputSpec is None:
+        from agent.metamodel import OutputSpec
+        task.outputSpec = OutputSpec(format="string", fields=[])
 
     for example in task.examples:
         validate_task_example(example)

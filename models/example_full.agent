@@ -4,7 +4,7 @@ reasoning: "chain-of-thought"
 WebResearch : "research agent" {
     input: "A user question requiring web research"
     behavior: "Search, extract, and summarize relevant information"
-    output: "markdown"
+    output: markdown
     skills: [webSearch, docReader]
     rules: [verify_sources, no_hallucination]
 
