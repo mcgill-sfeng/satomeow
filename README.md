@@ -97,19 +97,31 @@ Expected result:
 - A new validated file is written at `models/agent_composer/generated/email_reply_drafter.agent`
 - The final line reports `Agent file created and validated successfully`
 
-6. Optionally enable example-focused prompt enrichment for the data visualizer demo:
+6. DSPy prompt compilation is a separate compile-time step. First compile the examples into a sidecar:
+
+```bash
+python -m agent.cli compile models/data_visualizer/data_visualizer.agent --model openai/gpt-5.4-nano
+```
+
+Then run with `--dspy`:
 
 ```bash
 python -m agent.cli run models/data_visualizer/data_visualizer.agent --dspy --verbose \
   "Visualize the aligned monthly sales data in models/data_visualizer/data/aligned_sales.json"
 ```
 
+Important note:
+
+- `--dspy` only changes the runtime prompt when `models/data_visualizer/data_visualizer.agent.compiled.json` exists
+- Without a compiled sidecar, `--dspy` only adds lightweight guidance text around the original examples
+- For tool-heavy tasks like `data_visualizer`, the current DSPy path is experimental and should be validated by inspecting the composed prompt
+
 ## DSL Syntax
 
 For the full language reference, see **[DSL_REFERENCE.md](DSL_REFERENCE.md)**.
 
-A `.agent` file begins with two global defaults, followed by any number of executor declarations, rules, and skills in
-any order.
+A `.agent` file begins with two global defaults, followed by any number of executor declarations, chat declarations,
+rules, and skills in any order.
 
 ```text
 llm: "<model-id>"
@@ -129,6 +141,14 @@ TaskName : "persona" {
         commands: ["cmd1", "cmd2"]
         output: "..."
     }
+}
+
+chat AgentName : "persona" {
+    llm: "<override>"           // optional — inherits global if omitted
+    reasoning: "<override>"     // optional — inherits global if omitted
+    goal: "<one-sentence goal>"
+    questions: ["q1", "q2"]     // at least one question
+    executor: SomeExecutor      // optional
 }
 
 do rule_name: "positive constraint description"
@@ -212,7 +232,7 @@ This repository includes the frontend compiler stages plus a code-generated runt
 - Implemented in `agent/validation.py`
 - Required field checks
 - Duplicate detection: rule names, skill names, skill argument names, executor/task names
-- Default value handling (`outputSchema` defaults to `"string"`)
+- Default value handling (`output` defaults to `"string"` when omitted)
 
 ### 6. Prompt IR (Intermediate Representation)
 
@@ -226,7 +246,9 @@ This repository includes the frontend compiler stages plus a code-generated runt
 - `agent/runtime.py` maps executors to `openai-agents-python` agents, compiles DSL skills into SDK function tools, and
   compiles structured output schemas into Pydantic output models
 - The OpenAI Agents SDK owns the model/tool loop at runtime
-- `--dspy` is an optional prompt-enrichment mode that keeps using the task examples but does not replace the SDK loop
+- `python -m agent.cli compile ...` writes a `*.compiled.json` sidecar with DSPy-compiled demonstrations
+- `--dspy` loads that sidecar when present and swaps the executor prompt examples to the compiled demonstrations
+- Without a sidecar, `--dspy` is only a light prompt-phrasing change and should not be treated as a proven quality gain
 
 ### 8. CLI Interface
 
@@ -234,6 +256,7 @@ This repository includes the frontend compiler stages plus a code-generated runt
 python -m agent.cli inspect models/example_full.agent --print-ir
 python -m agent.cli generate models/example_full.agent --output generated_agent.py
 python -m agent.cli run models/example_full.agent "Compare the REST and GraphQL APIs of GitHub"
+python -m agent.cli compile models/data_visualizer/data_visualizer.agent --model openai/gpt-5.4-nano
 python -m agent.cli run models/example_full.agent --dspy "Compare the REST and GraphQL APIs of GitHub"
 ```
 
@@ -281,7 +304,7 @@ Test coverage includes:
 from agent.parser import parse_model
 
 system = parse_model("models/example_full.agent")
-print(system.planner.llm)  # "gpt-5"
+print(system.planner.llm)  # "gpt-5.4-nano"
 print(system.executors[0].persona)  # "research agent"
 ```
 

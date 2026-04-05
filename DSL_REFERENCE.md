@@ -45,7 +45,7 @@ reasoning: "strategy"
 
 | Field | Type | Description |
 |---|---|---|
-| `llm` | string | Default model ID for all executors. Example: `"gpt-5.4-nano"`, `"gpt-4o"`. |
+| `llm` | string | Default model ID for all executors. Example: `"gpt-5.4-nano"`. |
 | `reasoning` | string | Default reasoning strategy. Use `"react"` for tool-using agents or `"chain-of-thought"` for reasoning-only agents. |
 
 Both fields are required and must appear before any item declarations.
@@ -337,7 +337,7 @@ A `.agent` file can declare any number of executors. When multiple executors are
 
 ```
 // Global defaults — required, always first
-llm: "gpt-4o"
+llm: "gpt-5.4-nano"
 reasoning: "react"
 
 // --- Executor 1: pure LLM, no skills needed ---
@@ -350,7 +350,7 @@ Summarizer : "text summarization agent" {
 
 // --- Executor 2: tool-using agent ---
 DataFetcher : "data retrieval agent" {
-    llm: "gpt-4o-mini"          // per-executor model override
+    llm: "gpt-5.4-nano"         // per-executor model override
     reasoning: "chain-of-thought"
     input: "A URL or search query for data to retrieve"
     behavior: "Fetch the requested data using available tools and return it verbatim"
