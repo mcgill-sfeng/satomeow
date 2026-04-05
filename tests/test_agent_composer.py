@@ -3,11 +3,10 @@
 Covers parsing, IR structure, tool execution, and planner routing.
 Does NOT make real API calls — e2e tests for that are in test_e2e_*.py.
 """
+
 import asyncio
 import json
 from pathlib import Path
-
-import pytest
 
 from agent.ir import build_prompt_ir
 from agent.parser import parse_model
@@ -138,9 +137,7 @@ def test_run_inspect_skill_reports_invalid_file(tmp_path):
 
     bad = tmp_path / "bad.agent"
     bad.write_text("this is not valid DSL", encoding="utf-8")
-    result = asyncio.run(
-        tools["run_inspect"].on_invoke_tool(None, json.dumps({"path": str(bad)}))
-    )
+    result = asyncio.run(tools["run_inspect"].on_invoke_tool(None, json.dumps({"path": str(bad)})))
     assert result["exit_code"] != 0
 
 
@@ -154,8 +151,7 @@ def test_planner_has_handoffs_for_both_executors():
     executors = ir["executors"]
     hooks = _RoutingHooks()
     executor_agents = {
-        e["name"]: build_openai_agent(e, tool_executor=ShellToolExecutor(), use_dspy=False)
-        for e in executors
+        e["name"]: build_openai_agent(e, tool_executor=ShellToolExecutor(), use_dspy=False) for e in executors
     }
     planner = build_planner_agent(executors, executor_agents, hooks, planner_llm="gpt-5.4-nano")
     handoff_names = {h.tool_name for h in planner.handoffs}

@@ -50,6 +50,7 @@ def test_invalid_reasoning_value_fails_parse(tmp_path):
         encoding="utf-8",
     )
     from textx.exceptions import TextXSemanticError
+
     with pytest.raises(TextXSemanticError, match="must be one of"):
         parse_model(bad)
 

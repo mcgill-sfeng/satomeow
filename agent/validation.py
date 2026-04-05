@@ -1,6 +1,5 @@
 from textx import TextXSemanticError, get_location
 
-
 ALLOWED_REASONING_EFFORTS = {"none", "minimal", "low", "medium", "high", "xhigh"}
 
 
@@ -66,10 +65,12 @@ def validate_task(task):
 
     if task.outputSpec is None:
         from agent.metamodel import OutputSpec
+
         task.outputSpec = OutputSpec(format="string", fields=[])
 
     for example in task.examples:
         validate_task_example(example, task)
+
 
 def validate_task_example(example, task):
     check_required(example, "input")
@@ -189,8 +190,7 @@ def validate_reasoning_effort(obj, field):
         setattr(obj, field, value)
     if value not in ALLOWED_REASONING_EFFORTS:
         _raise_semantic(
-            f"{obj.__class__.__name__}.{field} must be one of: "
-            f"{', '.join(sorted(ALLOWED_REASONING_EFFORTS))}",
+            f"{obj.__class__.__name__}.{field} must be one of: " f"{', '.join(sorted(ALLOWED_REASONING_EFFORTS))}",
             obj,
         )
 

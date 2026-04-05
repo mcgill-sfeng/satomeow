@@ -177,9 +177,7 @@ def _run_compile(args):
     system = parse_model(args.model_path)
     prompt_ir = build_prompt_ir(system)
 
-    executors_with_examples = [
-        e["name"] for e in prompt_ir["executors"] if e["task"].get("examples")
-    ]
+    executors_with_examples = [e["name"] for e in prompt_ir["executors"] if e["task"].get("examples")]
     if not executors_with_examples:
         print("No executors with examples found — nothing to compile.")
         return
@@ -188,6 +186,7 @@ def _run_compile(args):
     if args.model:
         try:
             import dspy
+
             lm = dspy.LM(args.model)
         except Exception as exc:
             print(f"[error] Could not initialise DSPy LM '{args.model}': {exc}")
@@ -270,10 +269,6 @@ def _run_prompt_dump(args):
 
 
 def _run_generated_agent(args):
-    from agent.ir import build_prompt_ir
-    from agent.parser import parse_model
-    from agent.runtime import AgentSystemRuntime, load_system_spec
-
     with tempfile.TemporaryDirectory(prefix="agent_codegen_") as temp_dir:
         module_path = Path(temp_dir) / "generated_agent.py"
         generate_agent_module(args.model_path, module_path)
@@ -332,11 +327,10 @@ def _run_generated_agent(args):
     print(result.output)
 
 
-
 def _run_chat(args):
     from agent.ir import build_prompt_ir
     from agent.parser import parse_model
-    from agent.runtime import AgentSystemRuntime, load_system_spec
+    from agent.runtime import AgentSystemRuntime
 
     system = parse_model(args.model_path)
     prompt_ir = build_prompt_ir(system)
@@ -376,7 +370,7 @@ def _run_chat(args):
         print(f"[{i + 1}/{len(questions)}] {question}", flush=True)
         try:
             answer = input("> ").strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError, KeyboardInterrupt:
             print(flush=True)
             return
         if answer.lower() in {"quit", "exit"}:
@@ -399,7 +393,7 @@ def _run_chat(args):
 
     try:
         proceed = input("Proceed? [Y/n] ").strip().lower()
-    except (EOFError, KeyboardInterrupt):
+    except EOFError, KeyboardInterrupt:
         print(flush=True)
         return
 

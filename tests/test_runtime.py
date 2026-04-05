@@ -26,7 +26,6 @@ from agent.runtime import (
 )
 from agent.schema import coerce_structured_output, parse_output_schema
 
-
 # ---------------------------------------------------------------------------
 # Shell / tool primitives
 # ---------------------------------------------------------------------------
@@ -195,8 +194,7 @@ def test_build_planner_agent_has_handoffs_for_each_executor():
     executors = _make_executors_ir()
     hooks = _RoutingHooks()
     executor_agents = {
-        e["name"]: build_openai_agent(e, tool_executor=ShellToolExecutor(), use_dspy=False)
-        for e in executors
+        e["name"]: build_openai_agent(e, tool_executor=ShellToolExecutor(), use_dspy=False) for e in executors
     }
     planner = build_planner_agent(
         executors,
@@ -223,6 +221,7 @@ def test_routing_hooks_captures_executor_name():
 
     async def _sim():
         from unittest.mock import MagicMock
+
         from_agent = MagicMock()
         from_agent.name = "Planner"
         to_agent = MagicMock()
@@ -256,8 +255,13 @@ def test_agent_runtime_single_executor_runs_directly(monkeypatch):
         captured["agent_model"] = agent.model
         captured["run_config"] = run_config
         return SimpleNamespace(
-            final_output={"status": "success", "message": "ok", "artifact_path": "out.svg",
-                          "preprocessed_data_path": "", "preprocessor_script_path": ""},
+            final_output={
+                "status": "success",
+                "message": "ok",
+                "artifact_path": "out.svg",
+                "preprocessed_data_path": "",
+                "preprocessor_script_path": "",
+            },
             raw_responses=[],
             new_items=[],
         )

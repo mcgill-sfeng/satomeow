@@ -1,14 +1,13 @@
 """Tests for the 'agent cli chat' subcommand and ChatModeAgent pipeline."""
-import json
+
 from types import SimpleNamespace
-from unittest.mock import patch
 
 import pytest
 
 from agent import cli
 from agent.ir import build_prompt_ir
 from agent.parser import parse_model
-from agent.runtime import AgentSystemRuntime, ShellToolExecutor
+from agent.runtime import AgentSystemRuntime
 
 CHAT_MODEL = "models/example_chat.agent"
 NO_CHAT_MODEL = "models/example_full.agent"
@@ -50,6 +49,7 @@ def test_chat_model_invalid_executor_ref(tmp_path):
         encoding="utf-8",
     )
     from textx.exceptions import TextXSemanticError
+
     with pytest.raises(TextXSemanticError, match="unknown executor"):
         parse_model(bad)
 
@@ -64,6 +64,7 @@ def test_chat_agent_requires_at_least_one_question(tmp_path):
         encoding="utf-8",
     )
     from textx.exceptions import TextXSyntaxError
+
     with pytest.raises(TextXSyntaxError):
         parse_model(bad)
 
@@ -148,7 +149,9 @@ def test_chat_cancel_at_confirmation(monkeypatch, capsys):
 
     def fake_run_sync(agent, user_input, *, run_config, hooks=None, max_turns=None):
         if agent.name == "ConfirmationGenerator":
-            return SimpleNamespace(final_output="I'll greet Alice casually. Shall I proceed?", raw_responses=[], new_items=[])
+            return SimpleNamespace(
+                final_output="I'll greet Alice casually. Shall I proceed?", raw_responses=[], new_items=[]
+            )
         raise AssertionError("Executor should not be called after cancel")
 
     monkeypatch.setattr("agent.runtime.Runner.run_sync", fake_run_sync)
@@ -168,7 +171,9 @@ def test_chat_full_flow_executes_executor(monkeypatch, capsys):
 
     def fake_run_sync(agent, user_input, *, run_config, hooks=None, max_turns=None):
         if agent.name == "ConfirmationGenerator":
-            return SimpleNamespace(final_output="I'll greet Alice casually. Shall I proceed?", raw_responses=[], new_items=[])
+            return SimpleNamespace(
+                final_output="I'll greet Alice casually. Shall I proceed?", raw_responses=[], new_items=[]
+            )
         # Executor call
         executor_called_with["agent"] = agent.name
         executor_called_with["input"] = user_input

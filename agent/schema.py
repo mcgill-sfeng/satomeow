@@ -94,8 +94,7 @@ def _parse_legacy_string(schema_text: str) -> OutputSchemaSpec:
             continue
         if ":" not in chunk:
             raise ValueError(
-                "Structured output schemas must use 'field: type' items "
-                f"separated by commas. Got: {raw!r}"
+                "Structured output schemas must use 'field: type' items " f"separated by commas. Got: {raw!r}"
             )
         name, type_name = chunk.split(":", 1)
         field_name = name.strip()

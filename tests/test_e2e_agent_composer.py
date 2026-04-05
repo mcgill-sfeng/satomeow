@@ -68,9 +68,7 @@ def _inspect_agent(path: Path) -> subprocess.CompletedProcess[str]:
 def test_e2e_agent_composer_creates_new_agent_file(tmp_path):
     target = tmp_path / "summarizer.agent"
 
-    result = _run_cli_json(
-        f"I need an agent that summarizes web pages. Save it to {target}"
-    )
+    result = _run_cli_json(f"I need an agent that summarizes web pages. Save it to {target}")
 
     assert target.exists()
     text = target.read_text(encoding="utf-8")
@@ -83,9 +81,7 @@ def test_e2e_agent_composer_creates_new_agent_file(tmp_path):
 
 
 def test_e2e_agent_composer_routes_to_validator_for_existing_agent():
-    result = _run_cli_json(
-        "Validate models/data_visualizer/data_visualizer.agent"
-    )
+    result = _run_cli_json("Validate models/data_visualizer/data_visualizer.agent")
 
     assert result["executor_name"] == "Validator"
     assert result["output"]["valid"] is True

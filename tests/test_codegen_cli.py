@@ -1,8 +1,8 @@
+import json
 import os
 import stat
 import subprocess
 import sys
-import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -45,8 +45,7 @@ def test_cli_portable_help_runs_without_site_packages(tmp_path):
 
     wrapper = tmp_path / "python-no-site.sh"
     wrapper.write_text(
-        "#!/usr/bin/env sh\n"
-        f"exec {sys.executable} -S \"$@\"\n",
+        "#!/usr/bin/env sh\n" f'exec {sys.executable} -S "$@"\n',
         encoding="utf-8",
     )
     wrapper.chmod(wrapper.stat().st_mode | stat.S_IXUSR)

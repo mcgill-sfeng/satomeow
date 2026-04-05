@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Helper script: write text content to a file, creating parent dirs as needed."""
+
 import argparse
 from pathlib import Path
 

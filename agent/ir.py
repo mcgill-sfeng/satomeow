@@ -44,10 +44,7 @@ def build_prompt_ir(system) -> dict:
                 "input_description": executor.task.inputDescription,
                 "behavior": executor.task.behavior,
                 "output_format": spec.format if spec else "string",
-                "output_fields": [
-                    {"name": f.name, "type": f.type}
-                    for f in (spec.fields if spec else [])
-                ],
+                "output_fields": [{"name": f.name, "type": f.type} for f in (spec.fields if spec else [])],
                 "examples": [
                     {
                         "input": ex.input,
@@ -55,8 +52,7 @@ def build_prompt_ir(system) -> dict:
                             {
                                 "tool_name": command.toolName,
                                 "arguments": [
-                                    {"name": argument.name, "value": argument.value}
-                                    for argument in command.arguments
+                                    {"name": argument.name, "value": argument.value} for argument in command.arguments
                                 ],
                             }
                             for command in ex.commands

@@ -5,7 +5,7 @@ import os
 import re
 import shlex
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +27,6 @@ _PARAM_PATTERN = re.compile(r"<([a-zA-Z_][a-zA-Z0-9_]*)>")
 # ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
-
 
 
 @dataclass(frozen=True)
@@ -183,6 +182,7 @@ class AgentSystemRuntime:
         self._compiled_sidecar: dict[str, Any] | None = None
         if use_dspy and source_model_path:
             from agent.dspy_compile import load_compiled_sidecar
+
             self._compiled_sidecar = load_compiled_sidecar(source_model_path)
 
     def run(self, user_input: str, *, executor_name: str | None = None) -> RunResult:
@@ -204,12 +204,16 @@ class AgentSystemRuntime:
             hooks.executor_name = executor_name
             hooks.planner_reason = f"Direct execution (--executor {executor_name})."
             agent = build_openai_agent(executor, tool_executor=self.tool_executor, use_dspy=self.use_dspy)
-            sdk_result = Runner.run_sync(agent, user_input, run_config=run_config, hooks=hooks, max_turns=self.max_turns)
+            sdk_result = Runner.run_sync(
+                agent, user_input, run_config=run_config, hooks=hooks, max_turns=self.max_turns
+            )
         elif len(executors) == 1:
             executor = executors[0]
             hooks.executor_name = executor["name"]
             agent = build_openai_agent(executor, tool_executor=self.tool_executor, use_dspy=self.use_dspy)
-            sdk_result = Runner.run_sync(agent, user_input, run_config=run_config, hooks=hooks, max_turns=self.max_turns)
+            sdk_result = Runner.run_sync(
+                agent, user_input, run_config=run_config, hooks=hooks, max_turns=self.max_turns
+            )
         else:
             executor_agents = {
                 e["name"]: build_openai_agent(e, tool_executor=self.tool_executor, use_dspy=self.use_dspy)
@@ -224,7 +228,9 @@ class AgentSystemRuntime:
                 planner_llm,
                 planner_spec.get("reasoning_strategy"),
             )
-            sdk_result = Runner.run_sync(planner, user_input, run_config=run_config, hooks=hooks, max_turns=self.max_turns)
+            sdk_result = Runner.run_sync(
+                planner, user_input, run_config=run_config, hooks=hooks, max_turns=self.max_turns
+            )
 
             if hooks.executor_name is None:
                 # Planner did not hand off — fall back to first executor gracefully.
@@ -259,8 +265,11 @@ class AgentSystemRuntime:
         compiled_examples = None
         if self._compiled_sidecar is not None:
             from agent.dspy_compile import get_compiled_examples
+
             compiled_examples = get_compiled_examples(self._compiled_sidecar, hooks.executor_name)
-        system_prompt = build_executor_system_prompt(executor, use_dspy=self.use_dspy, compiled_examples=compiled_examples)
+        system_prompt = build_executor_system_prompt(
+            executor, use_dspy=self.use_dspy, compiled_examples=compiled_examples
+        )
         task = executor["task"]
         schema = parse_output_schema(
             output_format=task["output_format"],
@@ -364,9 +373,7 @@ class AgentSystemRuntime:
 
         if executor_name is None:
             if len(executors) != 1:
-                raise ValueError(
-                    "Multi-executor systems require --executor NAME or --planner when dumping prompts."
-                )
+                raise ValueError("Multi-executor systems require --executor NAME or --planner when dumping prompts.")
             executor = executors[0]
         else:
             executor = self._find_executor(executor_name)
@@ -374,6 +381,7 @@ class AgentSystemRuntime:
         compiled_examples = None
         if self._compiled_sidecar is not None:
             from agent.dspy_compile import get_compiled_examples
+
             compiled_examples = get_compiled_examples(self._compiled_sidecar, executor["name"])
 
         return {
@@ -411,7 +419,9 @@ def build_openai_agent(
         model=executor["llm"],
         model_settings=build_model_settings(executor.get("reasoning_strategy")),
         tools=[build_function_tool(skill, tool_executor=tool_executor) for skill in executor["task"]["skills"]],
-        output_type=build_output_type(executor["task"]["output_format"], executor["task"]["output_fields"], executor["name"]),
+        output_type=build_output_type(
+            executor["task"]["output_format"], executor["task"]["output_fields"], executor["name"]
+        ),
     )
 
 
@@ -474,10 +484,7 @@ def build_examples_prompt(
             "Examples (DSPy-compiled demonstrations):\n"
             "These are bootstrapped high-signal demonstrations. Follow their patterns closely.\n"
         )
-        formatted = "\n\n".join(
-            f"Input: {ex['input']}\nFinal output: {ex['output']}"
-            for ex in compiled_examples
-        )
+        formatted = "\n\n".join(f"Input: {ex['input']}\nFinal output: {ex['output']}" for ex in compiled_examples)
         return heading + formatted
 
     examples = executor["task"]["examples"]

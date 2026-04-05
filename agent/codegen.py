@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import importlib.util
 import importlib.metadata as importlib_metadata
+import importlib.util
 import json
-import os
 import re
 import shutil
 import stat
@@ -99,10 +98,10 @@ def generate_portable_agent_bundle(model_path: str | Path, output_dir: str | Pat
     agent_sh.write_text(
         "#!/usr/bin/env sh\n"
         "set -eu\n"
-        "SCRIPT_DIR=$(CDPATH= cd -- \"$(dirname \"$0\")\" && pwd)\n"
+        'SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)\n'
         "PYTHON_BIN=${PYTHON:-python3}\n"
-        "PYTHONPATH=\"$SCRIPT_DIR/lib${PYTHONPATH:+:$PYTHONPATH}\" exec \"$PYTHON_BIN\" "
-        "\"$SCRIPT_DIR/main.py\" \"$@\"\n",
+        'PYTHONPATH="$SCRIPT_DIR/lib${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON_BIN" '
+        '"$SCRIPT_DIR/main.py" "$@"\n',
         encoding="utf-8",
     )
     agent_sh.chmod(agent_sh.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
@@ -188,11 +187,7 @@ def _distribution_names_for_imports(import_names: tuple[str, ...]) -> set[str]:
 def _top_level_imports_for_distribution(distribution: importlib_metadata.Distribution) -> set[str]:
     top_level = distribution.read_text("top_level.txt")
     if top_level:
-        return {
-            line.strip()
-            for line in top_level.splitlines()
-            if line.strip() and _IMPORT_NAME_RE.match(line.strip())
-        }
+        return {line.strip() for line in top_level.splitlines() if line.strip() and _IMPORT_NAME_RE.match(line.strip())}
 
     inferred: set[str] = set()
     for file in distribution.files or ():

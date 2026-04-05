@@ -13,12 +13,12 @@ At inference time, ``AgentSystemRuntime`` loads the sidecar automatically when
 it is present and ``use_dspy=True``.  The compiled demonstrations replace the
 hand-written examples in the executor system prompt.
 """
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 from typing import Any
-
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -77,7 +77,7 @@ def load_compiled_sidecar(source_path: str | Path) -> dict[str, Any] | None:
         return None
     try:
         return json.loads(sidecar.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+    except json.JSONDecodeError, OSError:
         return None
 
 
@@ -110,11 +110,10 @@ def _sidecar_path(source_path: str | Path) -> Path:
 def _require_dspy():
     try:
         import dspy
+
         return dspy
     except ImportError as exc:
-        raise RuntimeError(
-            "dspy is not installed. Run: pip install dspy"
-        ) from exc
+        raise RuntimeError("dspy is not installed. Run: pip install dspy") from exc
 
 
 def _compile_executor(
@@ -135,10 +134,7 @@ def _compile_executor(
     except Exception as exc:
         # Graceful fallback — original examples preserved as-is.
         return {
-            "compiled_examples": [
-                {"input": ex["input"], "output": ex["output"]}
-                for ex in examples
-            ],
+            "compiled_examples": [{"input": ex["input"], "output": ex["output"]} for ex in examples],
             "bootstrap_error": str(exc),
         }
 

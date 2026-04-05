@@ -132,10 +132,7 @@ def _build_output_spec(raw_spec) -> OutputSpec:
         return OutputSpec(format=str(raw_spec.format), fields=[])
 
     if cls == "StructuredOutputSpec":
-        fields = [
-            OutputField(name=f.name, type=str(f.type))
-            for f in (raw_spec.fields or [])
-        ]
+        fields = [OutputField(name=f.name, type=str(f.type)) for f in (raw_spec.fields or [])]
         return OutputSpec(format=str(raw_spec.format), fields=fields)
 
     # Fallback: unknown spec type — treat as plain string

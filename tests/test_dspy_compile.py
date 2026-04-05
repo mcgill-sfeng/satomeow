@@ -1,10 +1,8 @@
 """Tests for DSPy compile-time integration (agent/dspy_compile.py)."""
+
 import json
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from agent.dspy_compile import (
     get_compiled_examples,
@@ -14,7 +12,6 @@ from agent.dspy_compile import (
 from agent.ir import build_prompt_ir
 from agent.parser import parse_model
 from agent.runtime import AgentSystemRuntime, build_examples_prompt
-
 
 MODEL_PATH = "models/example_full.agent"
 
@@ -26,6 +23,7 @@ MODEL_PATH = "models/example_full.agent"
 
 def test_sidecar_path_is_next_to_model(tmp_path):
     from agent.dspy_compile import _sidecar_path
+
     p = tmp_path / "my_agent.agent"
     assert _sidecar_path(p) == tmp_path / "my_agent.agent.compiled.json"
 
@@ -117,10 +115,8 @@ def test_compile_system_spec_writes_sidecar(tmp_path):
 def test_compile_system_spec_skips_executors_without_examples(tmp_path):
     # Parse a model whose executors have no examples
     from agent.parser import parse_model_text
-    text = (
-        'llm: "gpt-5.4-nano"\nreasoning: "medium"\n'
-        'A : "a" { input: "x" behavior: "y" }\n'
-    )
+
+    text = 'llm: "gpt-5.4-nano"\nreasoning: "medium"\n' 'A : "a" { input: "x" behavior: "y" }\n'
     ir = build_prompt_ir(parse_model_text(text))
     source = tmp_path / "no_examples.agent"
     source.touch()
@@ -187,13 +183,7 @@ def test_runtime_loads_sidecar_on_use_dspy(tmp_path, monkeypatch):
     model_path = tmp_path / "test.agent"
     model_path.touch()
     sidecar = tmp_path / "test.agent.compiled.json"
-    compiled_data = {
-        "executors": {
-            "WebResearch": {
-                "compiled_examples": [{"input": "ci", "output": "co"}]
-            }
-        }
-    }
+    compiled_data = {"executors": {"WebResearch": {"compiled_examples": [{"input": "ci", "output": "co"}]}}}
     sidecar.write_text(json.dumps(compiled_data), encoding="utf-8")
 
     ir = build_prompt_ir(parse_model(MODEL_PATH))
@@ -220,6 +210,7 @@ def test_runtime_sidecar_is_none_without_use_dspy(tmp_path):
 
 def test_compile_cli_registered():
     from agent.cli import _build_parser
+
     parser = _build_parser()
     args = parser.parse_args(["compile", MODEL_PATH])
     assert args.command == "compile"
@@ -228,6 +219,7 @@ def test_compile_cli_registered():
 
 def test_compile_cli_model_flag():
     from agent.cli import _build_parser
+
     parser = _build_parser()
     args = parser.parse_args(["compile", MODEL_PATH, "--model", "openai/gpt-5.4-nano"])
     assert args.model == "openai/gpt-5.4-nano"
@@ -235,7 +227,6 @@ def test_compile_cli_model_flag():
 
 def test_compile_cli_no_examples_prints_message(tmp_path, capsys):
     from agent import cli
-    from agent.parser import parse_model_text
 
     # Write a real .agent file with no examples so the CLI can parse it from disk.
     text = 'llm: "gpt-5.4-nano"\nreasoning: "medium"\nA : "a" { input: "x" behavior: "y" }\n'
