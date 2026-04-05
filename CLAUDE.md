@@ -23,8 +23,17 @@ python -m agent.cli inspect models/example_full.agent --print-ir
 # Generate a runnable Python module
 python -m agent.cli generate models/example_full.agent --output generated_agent.py
 
-# Run an agent directly (requires OPENAI_BASE_URL and OPENAI_API_KEY in env or .env)
+# Run an agent directly (requires OPENAI_API_KEY in env or .env)
 python -m agent.cli run models/example_full.agent "Compare the REST and GraphQL APIs of GitHub"
+
+# Print the prompt payload that would be sent for a given input
+python -m agent.cli prompt models/example_full.agent "Compare REST and GraphQL"
+
+# Run interactive chat intake mode (requires a 'chat' block in the model)
+python -m agent.cli chat models/example_chat.agent
+
+# Compile DSPy-optimised examples into a sidecar file
+python -m agent.cli compile models/example_full.agent
 ```
 
 ## Architecture
@@ -38,61 +47,72 @@ This is a **DSL compiler and runtime** for specifying AI agent systems via `.age
 ### Compiler Pipeline
 
 1. **Grammar** (`grammar/agent.tx`) — textX grammar defining the `.agent` syntax. Core constructs: `Model`,
-   `ExecutorSyntax`, `Rule`, `Skill`, `Example`.
+   `ExecutorSyntax`, `ChatAgent`, `Rule`, `Skill`, `Example`, `OutputSpec`.
 
 2. **Parsing** (`agent/parser.py`) — Entry point for loading the grammar and parsing `.agent` files into textX model
    objects.
 
 3. **Object Processors** (`agent/processors.py`) — Post-parse transformations: converts `ruleType` strings (`do`/`dont`)
-   to a boolean `negative` attribute, renames `params` → `skillArguments`, and builds the `System` metamodel from the
-   raw textX model.
+   to a boolean `negative` attribute, renames `params` → `skillArguments`, builds `OutputSpec`/`ExampleCommand`
+   metamodel objects, and assembles the `System` from the raw textX model.
 
-4. **Metamodel** (`agent/metamodel.py`) — Stable Python dataclasses (`System`, `Planner`, `Executor`, `Task`,
-   `SkillArgument`) that decouple the rest of the compiler from textX internals.
+4. **Metamodel** (`agent/metamodel.py`) — Stable Python classes (`System`, `Planner`, `Executor`, `Task`, `OutputSpec`,
+   `OutputField`, `ChatModeAgent`, `ExampleCommand`, `ExampleCommandArgument`, `SkillArgument`) that decouple the rest
+   of the compiler from textX internals.
 
 5. **Validation** (`agent/validation.py`) — Semantic checks: required fields, duplicate names (rules/skills/executors),
-   and cross-reference existence.
+   cross-reference existence, valid reasoning effort values, and chat agent executor references.
 
 6. **IR** (`agent/ir.py`) — Converts `System` into a Jinja2-friendly flat dict with snake_case keys and resolved
-   cross-references.
+   cross-references. Executors are keyed by task name. Output schema is split into `output_format` + `output_fields`.
 
 7. **Code Generation** (`agent/codegen.py` + `agent/templates/generated_agent.py.j2`) — Renders a self-contained Python
    module from the IR. Generated modules embed the system spec as JSON and import `AgentSystemRuntime` from
-   `agent.runtime`.
+   `agent.runtime`. An experimental portable bundle (with vendored dependencies) is also available via
+   `agent/templates/portable_agent.py.j2`.
 
-8. **Runtime** (`agent/runtime.py`) — Orchestrates planner/executor interactions. Key classes:
-    - `AgentSystemRuntime` — main orchestration engine
-    - `HeuristicPlanner` — selects executor by token overlap
-    - `OpenAICompatibleModel` — LLM client for OpenAI-compatible APIs
-    - `ExampleDrivenModel` — deterministic fallback using few-shot examples (no API needed)
-    - `ShellToolExecutor` — runs shell commands extracted from `<tool_call>...</tool_call>` or `TOOL_CALL: ...` LLM
-      responses
+8. **Runtime** (`agent/runtime.py`) — Orchestrates planner/executor interactions via the OpenAI Agents SDK. Key
+   classes and functions:
+    - `AgentSystemRuntime` — main orchestration engine; handles single-executor, multi-executor (planner handoff), and
+      chat modes
+    - `build_planner_agent` — builds a routing Agent whose only job is to hand off to the right executor
+    - `build_openai_agent` — builds an executor Agent with tools and structured output type
+    - `ShellToolExecutor` — runs shell commands rendered from skill templates
+    - `render_skill_command` — interpolates `<param>` placeholders in skill command strings using `shlex.quote`
 
-9. **Schema** (`agent/schema.py`) — Parses and coerces structured output schemas (`answer: str, confidence: float`).
-   Optionally bridges to DSPy signatures if `dspy` is installed.
+9. **Schema** (`agent/schema.py`) — Parses and coerces structured output schemas (`output_format` + `output_fields`).
+   Supports `json`, `toml`, `yaml`, `markdown`, and `string`. Optionally bridges to DSPy signatures if `dspy` is
+   installed.
+
+10. **DSPy Compile** (`agent/dspy_compile.py`) — Runs `BootstrapFewShot` on executors that declare examples and writes
+    a sidecar `<model>.agent.compiled.json`. The runtime loads this automatically when `use_dspy=True`.
 
 ### Key Design Decisions
 
-- The **Planner** is implicit — auto-created from global `llm`/`reasoning` defaults.
+- The **Planner** is implicit — auto-created from global `llm`/`reasoning` defaults. `reasoning` is optional.
 - **Executor + Task** are merged into a single DSL declaration (`TaskName : "persona" { ... }`).
 - Per-executor `llm`/`reasoning` override globals when specified.
 - Generated agents are self-contained and runnable without the compiler (they only need `agent.runtime`).
-- Without a provider configured, the runtime falls back to `ExampleDrivenModel` (deterministic, example-driven).
+- The runtime requires an OpenAI API key — there is no offline fallback.
+- Output schema uses a typed block DSL: `output: json { field: type, ... }` or `output: markdown`.
+- Example commands are structured: `tool_name(arg: "value")` instead of opaque strings.
 
 ### Provider Configuration
 
 Set in shell environment or `.env` at repo root (or next to the `.agent` file):
 
 ```bash
-OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your_api_key_here
+OPENAI_BASE_URL=https://api.openai.com/v1  # optional, defaults to OpenAI
 ```
 
 ### Example Models
 
 - `models/example_minimal.agent` — minimal valid file
 - `models/example_full.agent` — full-featured (two executors, rules, skills, examples)
-- `models/data_visualizer/` — end-to-end runnable demo
+- `models/example_chat.agent` — demonstrates the `chat` block for interactive intake
+- `models/agent_composer/` — multi-executor demo with planner routing
+- `models/data_visualizer/` — end-to-end runnable demo with file I/O skills
 - `models/invalid_example_*.agent` — invalid files used in validation tests
 
 ### VSCode Extension
