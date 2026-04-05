@@ -11,6 +11,10 @@
 //   - Disambiguation: Name ':' STRING '{' = ExecutorSyntax;
 //                     ('do'|'dont') ID = Rule;
 //                     Name '{' = Skill
+//   - Output schema uses a typed block:
+//       output: json { field: type, ... }
+//       output: markdown
+//       output: string
 // ============================================================
 
 Model:
@@ -20,7 +24,19 @@ Model:
 ;
 
 Item:
-    ExecutorSyntax | Rule | Skill
+    ExecutorSyntax | ChatAgent | Rule | Skill
+;
+
+// Interactive chat intake agent.
+// Drives a structured Q&A loop, then hands off to an executor for one-shot execution.
+ChatAgent:
+    'chat' name=ID ':' persona=STRING '{'
+        ('llm' ':' llm=STRING)?
+        ('reasoning' ':' reasoningStrategy=STRING)?
+        'goal' ':' goal=STRING
+        'questions' ':' '[' questions+=STRING[','] ']'
+        ('executor' ':' executorRef=ID)?
+    '}'
 ;
 
 // Merged executor + task declaration.
@@ -32,11 +48,46 @@ ExecutorSyntax:
         ('reasoning' ':' reasoningStrategy=STRING)?
         'input' ':' inputDescription=STRING
         'behavior' ':' behavior=STRING
-        ('output' ':' outputSchema=STRING)?
+        ('output' ':' outputSpec=OutputSpec)?
         ('skills' ':' '[' skillRefs*=ID[','] ']')?
         ('rules' ':' '[' ruleRefs*=ID[','] ']')?
         examples*=Example
     '}'
+;
+
+// Output specification — either a structured format block or a simple text keyword.
+OutputSpec:
+    StructuredOutputSpec | TextOutputSpec
+;
+
+// json / toml / yaml with a field block
+StructuredOutputSpec:
+    format=StructuredOutputFormat '{'
+        fields+=OutputField[',']
+    '}'
+;
+
+// 'string' or 'markdown' with no fields
+TextOutputSpec:
+    format=TextOutputFormat
+;
+
+StructuredOutputFormat:
+    'json' | 'toml' | 'yaml'
+;
+
+TextOutputFormat:
+    'string' | 'markdown'
+;
+
+OutputField:
+    name=ID ':' type=OutputFieldType
+;
+
+// Supported field types (scalars + list wrappers)
+OutputFieldType:
+    'list[str]' | 'list[int]' | 'list[float]' | 'list[bool]' |
+    'str' | 'int' | 'float' | 'bool'
 ;
 
 Example:

@@ -5,14 +5,14 @@ import os
 import re
 import shlex
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from agents import Agent, FunctionTool, RunConfig, Runner, handoff
 from agents.items import ToolCallOutputItem
 from agents.lifecycle import RunHooksBase
-from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
+from agents.models.openai_provider import OpenAIProvider
 from agents.run_context import RunContextWrapper
 from dotenv import dotenv_values
 from openai import AsyncOpenAI
@@ -26,6 +26,7 @@ _PARAM_PATTERN = re.compile(r"<([a-zA-Z_][a-zA-Z0-9_]*)>")
 # ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
+
 
 
 @dataclass(frozen=True)
@@ -166,23 +167,42 @@ class AgentSystemRuntime:
         *,
         tool_executor: ShellToolExecutor | None = None,
         source_model_path: str | None = None,
-        require_provider: bool = False,
         use_dspy: bool = False,
         max_turns: int = 50,
     ):
         self.system_spec = system_spec
         self.tool_executor = tool_executor or ShellToolExecutor()
         self.source_model_path = source_model_path
-        self.require_provider = require_provider
         self.use_dspy = use_dspy
         self.max_turns = max_turns
 
-    def run(self, user_input: str) -> RunResult:
+        # Load DSPy compiled sidecar if present and use_dspy is enabled.
+        self._compiled_sidecar: dict[str, Any] | None = None
+        if use_dspy and source_model_path:
+            from agent.dspy_compile import load_compiled_sidecar
+            self._compiled_sidecar = load_compiled_sidecar(source_model_path)
+
+    def run(self, user_input: str, *, executor_name: str | None = None) -> RunResult:
+        """Run the agent system on user_input.
+
+        Args:
+            user_input: The message to send.
+            executor_name: If given, bypass the planner and route directly to
+                this executor (matched by name).  Useful for ``--executor``
+                in chat mode or when the system has only one executor.
+        """
         executors = self.system_spec["executors"]
         run_config = self._build_run_config()
         hooks = _RoutingHooks()
 
-        if len(executors) == 1:
+        if executor_name is not None:
+            # Direct routing — no planner.
+            executor = self._find_executor(executor_name)
+            hooks.executor_name = executor_name
+            hooks.planner_reason = f"Direct execution (--executor {executor_name})."
+            agent = build_openai_agent(executor, tool_executor=self.tool_executor, use_dspy=self.use_dspy)
+            sdk_result = Runner.run_sync(agent, user_input, run_config=run_config, hooks=hooks, max_turns=self.max_turns)
+        elif len(executors) == 1:
             executor = executors[0]
             hooks.executor_name = executor["name"]
             agent = build_openai_agent(executor, tool_executor=self.tool_executor, use_dspy=self.use_dspy)
@@ -213,9 +233,8 @@ class AgentSystemRuntime:
             api_key=config["OPENAI_API_KEY"],
             base_url=config.get("OPENAI_BASE_URL"),
         )
-        planner_llm = self.system_spec.get("planner", {}).get("llm") or "gpt-4o-mini"
         return RunConfig(
-            model=OpenAIChatCompletionsModel(planner_llm, openai_client=client),
+            model_provider=OpenAIProvider(openai_client=client, use_responses=False),
             tracing_disabled=True,
             workflow_name=f"{self.system_spec.get('planner', {}).get('persona', 'agent')} runtime",
         )
@@ -227,7 +246,11 @@ class AgentSystemRuntime:
         sdk_result: Any,
         user_input: str,
     ) -> RunResult:
-        system_prompt = build_executor_system_prompt(executor, use_dspy=self.use_dspy)
+        compiled_examples = None
+        if self._compiled_sidecar is not None:
+            from agent.dspy_compile import get_compiled_examples
+            compiled_examples = get_compiled_examples(self._compiled_sidecar, hooks.executor_name)
+        system_prompt = build_executor_system_prompt(executor, use_dspy=self.use_dspy, compiled_examples=compiled_examples)
         task = executor["task"]
         schema = parse_output_schema(
             output_format=task["output_format"],
@@ -252,6 +275,52 @@ class AgentSystemRuntime:
             raw_responses=raw_responses,
             tool_results=tool_results,
         )
+
+    def generate_confirmation(
+        self,
+        goal: str,
+        questions: list[str],
+        answers: list[str],
+    ) -> str:
+        """Use the LLM to generate a natural confirmation message from the collected Q&A.
+
+        Makes a single LLM call with an ephemeral Agent. Returns a human-readable
+        summary ending with a confirmation question.
+        """
+        run_config = self._build_run_config()
+        chat_agent = self.system_spec.get("chat_agent") or {}
+        llm = chat_agent.get("llm") or self.system_spec.get("planner", {}).get("llm") or "gpt-5.4-nano"
+
+        qa_pairs = "\n".join(f"- {q}\n  → {a}" for q, a in zip(questions, answers))
+        prompt = (
+            f"Goal: {goal}\n\n"
+            f"Information collected from the user:\n{qa_pairs}\n\n"
+            "Write a concise 2-3 sentence message that summarizes what will be done based on the "
+            "collected information. End with a short question asking the user to confirm "
+            "(e.g. 'Shall I proceed?')."
+        )
+
+        agent = Agent(
+            name="ConfirmationGenerator",
+            instructions=(
+                "You are a concise assistant. "
+                "Given a task goal and collected Q&A pairs, write a brief, natural confirmation "
+                "message summarizing what will be done, then ask the user to confirm."
+            ),
+            model=llm,
+        )
+        sdk_result = Runner.run_sync(agent, prompt, run_config=run_config, max_turns=1)
+        return str(sdk_result.final_output)
+
+    @staticmethod
+    def _build_chat_input(goal: str, questions: list[str], answers: list[str]) -> str:
+        """Bundle collected Q&A into a structured prompt for the executor."""
+        lines = [f"Task: {goal}", ""]
+        for q, a in zip(questions, answers):
+            lines.append(f"Q: {q}")
+            lines.append(f"A: {a}")
+            lines.append("")
+        return "\n".join(lines).strip()
 
     def _find_executor(self, executor_name: str) -> dict[str, Any]:
         for executor in self.system_spec["executors"]:
@@ -280,13 +349,18 @@ def build_openai_agent(
     )
 
 
-def build_executor_system_prompt(executor: dict[str, Any], *, use_dspy: bool = False) -> str:
+def build_executor_system_prompt(
+    executor: dict[str, Any],
+    *,
+    use_dspy: bool = False,
+    compiled_examples: list[dict[str, Any]] | None = None,
+) -> str:
     task = executor["task"]
     rules = "\n".join(_format_rule(rule) for rule in executor["rules"]) or "None"
     skills = "\n".join(_format_skill(skill) for skill in task["skills"]) or "None"
     schema = parse_output_schema(output_format=task["output_format"], output_fields=task["output_fields"])
     schema_instruction = describe_output_schema(schema)
-    examples = build_examples_prompt(executor, use_dspy=use_dspy)
+    examples = build_examples_prompt(executor, use_dspy=use_dspy, compiled_examples=compiled_examples)
 
     return (
         f"You are {executor['persona']}.\n"
@@ -301,12 +375,34 @@ def build_executor_system_prompt(executor: dict[str, Any], *, use_dspy: bool = F
         "running mutating or expensive commands.\n"
         "3. Use tool outputs to decide the next step.\n"
         "4. Only return success after the required artifacts are actually created.\n"
-        "5. If work cannot proceed safely, return the structured failure explanation instead of inventing outputs.\n\n"
+        "5. If work cannot proceed safely, return the structured failure explanation instead of inventing outputs.\n"
         f"{examples}"
     )
 
 
-def build_examples_prompt(executor: dict[str, Any], *, use_dspy: bool) -> str:
+def build_examples_prompt(
+    executor: dict[str, Any],
+    *,
+    use_dspy: bool,
+    compiled_examples: list[dict[str, Any]] | None = None,
+) -> str:
+    """Build the examples section of the system prompt.
+
+    If ``compiled_examples`` is provided (loaded from a DSPy sidecar), those
+    replace the hand-written examples declared in the .agent file.
+    """
+    if compiled_examples is not None:
+        # DSPy-compiled demonstrations — richer heading, compiled content.
+        heading = (
+            "Examples (DSPy-compiled demonstrations):\n"
+            "These are bootstrapped high-signal demonstrations. Follow their patterns closely.\n"
+        )
+        formatted = "\n\n".join(
+            f"Input: {ex['input']}\nFinal output: {ex['output']}"
+            for ex in compiled_examples
+        )
+        return heading + formatted
+
     examples = executor["task"]["examples"]
     if not examples:
         return "Examples:\nNone"

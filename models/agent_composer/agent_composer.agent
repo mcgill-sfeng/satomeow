@@ -2,15 +2,11 @@ llm: "gpt-5.4-nano"
 reasoning: "react"
 
 Composer : "agent file composer" {
-    input: "A natural language description of an AI agent task, optionally with an output path for the generated .agent file"
-    behavior: "Generate a valid .agent DSL file for the described task. Follow these steps exactly: (1) Read grammar/agent.tx with read_file to see the exact grammar. (2) Analyse the requirements: task name, persona, input contract, behavior, output schema, skills, rules. (3) Write the .agent file with write_file. (4) Validate with run_inspect. If it fails, read the error carefully, fix the file, and validate again. Repeat until clean. (5) Return the path and status. CRITICAL DSL RULES you must follow: ExecutorSyntax form is exactly: Name : 'persona string' { input: 'STRING' behavior: 'STRING' } -- the colon and quoted persona after the Name are REQUIRED, omitting them causes the block to be parsed as a Skill and will fail. Skill form is: skillName { command: 'shell cmd' description: 'desc' param p: 'desc' }. Rule form is: do name: 'desc' or dont name: 'desc'. Names in skills:[...] and rules:[...] must exactly match a defined skill/rule block. Output spec: use bare keywords string or markdown for text, or json { field: type } for structured output with types str/int/float/bool/list[str]."
-    output: json {
-        agent_file_path: str,
-        validation_status: str,
-        message: str
-    }
+    input: "A natural language message: either a question about what the system can do, or a description of an agent task to generate a .agent file for"
+    behavior: "You help users design and generate .agent DSL files. The authoritative DSL reference is at DSL_REFERENCE.md — call read_file with path 'DSL_REFERENCE.md' before generating any file. CLASSIFY the input: (A) CONVERSATIONAL — greetings, questions about capabilities, vague requests. Respond in plain text only; do NOT call any tools. (B) COMPOSITION REQUEST — a concrete agent task to generate or modify. Read DSL_REFERENCE.md first, then follow the workflow below. [QUICK SYNTAX REMINDER — DSL_REFERENCE.md is authoritative] Header: llm and reasoning fields first. Unless the user explicitly asks for a different model, generated files MUST use llm: \"gpt-5.4-nano\". Executor: TaskName : \"persona\" { input behavior output skills rules }. CRITICAL: the colon and quoted persona after TaskName are REQUIRED. Output: string OR markdown OR json/toml/yaml { field: type }. Rule: do name: \"desc\" or dont name: \"desc\". Skill: name { command: \"single-line cmd with <param>\" description: \"desc\" param name: \"desc\" }. SKILL CONSTRAINTS: (1) command must be single-line — no newlines or heredocs. (2) Skills are OPTIONAL — pure LLM tasks need no skills block. [WORKFLOW FOR NEW FILE] (1) Call read_file on DSL_REFERENCE.md. (2) Write file with write_file. (3) Run run_inspect. (4) Fix errors and revalidate. (5) If any skill command references a Python script (e.g. python scripts/foo.py), create that script with write_file. (6) Report the path. [WORKFLOW FOR MODIFYING AN EXISTING FILE] If the user asks to add, change, or remove something in an existing .agent file: (1) Call read_file on DSL_REFERENCE.md. (2) Call read_file on the existing .agent file to get its full current content. (3) Write the complete updated file (all original content plus the requested changes) with write_file to the SAME path — do not create a new file. (4) Run run_inspect and fix any errors. (5) If any new skill references a Python script that does not yet exist, create that script with write_file. (6) Report the path."
+    output: string
     skills: [write_file, read_file, run_inspect]
-    rules: [always_validate, no_hallucinate_skills]
+    rules: [always_validate, no_hallucinate_skills, no_substitute_schema_for_tool, default_to_gpt_5_4_nano]
 
     example {
         input: "I need an agent that summarizes web pages. Save it to models/agent_composer/generated/summarizer.agent"
@@ -19,7 +15,7 @@ Composer : "agent file composer" {
             "python models/agent_composer/scripts/write_file.py --path models/agent_composer/generated/summarizer.agent --content 'llm: \"gpt-5.4-nano\"\nreasoning: \"react\"\n\nSummarize : \"web page summarizer\" {\n    input: \"A URL or block of web text to summarise\"\n    behavior: \"Fetch the page if a URL is given, extract main body text, and return a concise plain-text summary\"\n    output: string\n    skills: [fetchPage]\n    rules: [be_concise]\n}\n\ndo be_concise: \"keep summaries under 150 words\"\n\nfetchPage {\n    command: \"curl -s <url>\"\n    description: \"Fetch the raw HTML of a web page\"\n    param url: \"The URL to fetch\"\n}\n'",
             "python -m agent.cli inspect models/agent_composer/generated/summarizer.agent --print-ir"
         ]
-        output: "{\"agent_file_path\": \"models/agent_composer/generated/summarizer.agent\", \"validation_status\": \"valid\", \"message\": \"Agent file created and validated successfully.\"}"
+        output: "Agent file created and validated successfully. Path: models/agent_composer/generated/summarizer.agent"
     }
 }
 
@@ -40,12 +36,26 @@ Validator : "agent file validator" {
             "cat models/data_visualizer/data_visualizer.agent",
             "python -m agent.cli inspect models/data_visualizer/data_visualizer.agent --print-ir"
         ]
-        output: "{\"valid\": true, \"errors\": \"\", \"suggestions\": \"The file is valid. DataVisualizer agent has one executor with JSON output schema (5 fields), 3 skills, and 2 rules.\"}"
+        output: "{\"valid\": true, \"errors\": \"\", \"suggestions\": \"Valid. DataVisualizer has one executor with JSON output (5 fields), 3 skills, 2 rules.\"}"
     }
+}
+
+chat Intake : "agent composition intake assistant" {
+    goal: "Generate a complete, valid .agent file for the described agent task"
+    questions: [
+        "What should the agent do? Describe the task in one or two sentences.",
+        "What input does the agent accept? (e.g. a file path, a code snippet, a search query)",
+        "What output format do you want? (string, markdown, or json with named fields)",
+        "Does the agent need to run shell commands or scripts to complete its task? If so, briefly describe what tools it needs.",
+        "Any rules or constraints the agent must follow? (optional — press Enter to skip)"
+    ]
+    executor: Composer
 }
 
 do always_validate: "always run run_inspect after writing a .agent file to confirm it parses and validates cleanly"
 dont no_hallucinate_skills: "never reference a skill name in an executor's skills list that is not defined as a skill block in the same file"
+dont no_substitute_schema_for_tool: "if the user explicitly requests a script or tool (e.g. 'use a python script to validate'), you MUST add a skill block for it and create the supporting script — never substitute a structured output schema or rules as a replacement for a tool the user asked for"
+do default_to_gpt_5_4_nano: "unless the user explicitly requests another model, generated and updated .agent files must set llm: \"gpt-5.4-nano\""
 
 write_file {
     command: "python models/agent_composer/scripts/write_file.py --path <path> --content <content>"

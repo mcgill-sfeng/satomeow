@@ -10,11 +10,20 @@ GRAMMAR_PATH = PROJECT_ROOT / "grammar" / "agent.tx"
 
 _metamodel_cache = None
 
+# Grammar modification time at cache build time — used to invalidate on grammar changes.
+_metamodel_grammar_mtime: float | None = None
+
 
 def load_metamodel():
-    """Load the metamodel with object processors registered, cached after first call."""
-    global _metamodel_cache
-    if _metamodel_cache is None:
+    """Load the metamodel with object processors registered.
+
+    Cached after the first call. The cache is invalidated automatically if the
+    grammar file is modified (detected via mtime), so grammar changes take effect
+    without restarting the Python process.
+    """
+    global _metamodel_cache, _metamodel_grammar_mtime
+    current_mtime = GRAMMAR_PATH.stat().st_mtime
+    if _metamodel_cache is None or current_mtime != _metamodel_grammar_mtime:
         mm = metamodel_from_file(str(GRAMMAR_PATH))
         mm.register_obj_processors(
             {
@@ -23,6 +32,7 @@ def load_metamodel():
             }
         )
         _metamodel_cache = mm
+        _metamodel_grammar_mtime = current_mtime
     return _metamodel_cache
 
 

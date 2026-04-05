@@ -1,4 +1,4 @@
-llm: "gpt-5"
+llm: "gpt-5.4-nano"
 reasoning: "chain-of-thought"
 
 WebResearch : "research agent" {
@@ -22,7 +22,7 @@ WebResearch : "research agent" {
 }
 
 TextEditor : "editor agent" {
-    llm: "claude-sonnet-4.5"
+    llm: "gpt-5.4-nano"
     reasoning: "react"
     input: "Text to edit with instructions"
     behavior: "Apply edits based on user instructions"

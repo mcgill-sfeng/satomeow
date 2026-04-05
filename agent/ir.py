@@ -38,11 +38,16 @@ def build_prompt_ir(system) -> dict:
         task_ir = None
 
         if executor.task is not None:
+            spec = executor.task.outputSpec
             task_ir = {
                 "name": executor.task.name,
                 "input_description": executor.task.inputDescription,
                 "behavior": executor.task.behavior,
-                "output_schema": executor.task.outputSchema,
+                "output_format": spec.format if spec else "string",
+                "output_fields": [
+                    {"name": f.name, "type": f.type}
+                    for f in (spec.fields if spec else [])
+                ],
                 "examples": [
                     {
                         "input": ex.input,
@@ -65,12 +70,27 @@ def build_prompt_ir(system) -> dict:
             }
         )
 
+    # ---- Chat agent ----
+    chat_agent_ir = None
+    if system.chat_agent is not None:
+        ca = system.chat_agent
+        chat_agent_ir = {
+            "name": ca.name,
+            "persona": ca.persona,
+            "llm": ca.llm,
+            "reasoning_strategy": ca.reasoningStrategy,
+            "goal": ca.goal,
+            "questions": list(ca.questions),
+            "executor_ref": ca.executor_ref,
+        }
+
     # ---- System-level ----
     system_ir = {
         "planner": planner,
         "executors": executors,
         "rules": [global_rules[rule.name] for rule in system.rules],
         "skills": [global_skills[skill.name] for skill in system.skills],
+        "chat_agent": chat_agent_ir,
     }
 
     return system_ir

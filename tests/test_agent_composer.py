@@ -44,12 +44,11 @@ def test_agent_composer_ir_has_correct_executors():
     assert names == {"Composer", "Validator"}
 
 
-def test_composer_ir_has_json_output():
+def test_composer_ir_has_string_output():
     ir = build_prompt_ir(parse_model(MODEL_PATH))
     composer = next(e for e in ir["executors"] if e["name"] == "Composer")
-    assert composer["task"]["output_format"] == "json"
-    field_names = {f["name"] for f in composer["task"]["output_fields"]}
-    assert field_names == {"agent_file_path", "validation_status", "message"}
+    assert composer["task"]["output_format"] == "string"
+    assert composer["task"]["output_fields"] == []
 
 
 def test_validator_ir_has_json_output():
@@ -158,7 +157,7 @@ def test_planner_has_handoffs_for_both_executors():
         e["name"]: build_openai_agent(e, tool_executor=ShellToolExecutor(), use_dspy=False)
         for e in executors
     }
-    planner = build_planner_agent(executors, executor_agents, hooks, planner_llm="gpt-4o")
+    planner = build_planner_agent(executors, executor_agents, hooks, planner_llm="gpt-5.4-nano")
     handoff_names = {h.tool_name for h in planner.handoffs}
     assert "transfer_to_composer" in handoff_names
     assert "transfer_to_validator" in handoff_names

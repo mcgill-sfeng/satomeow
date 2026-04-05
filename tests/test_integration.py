@@ -62,7 +62,7 @@ def test_prompt_ir_structure():
     assert "executors" in ir
     assert isinstance(ir["executors"], list)
 
-    assert ir["planner"]["llm"] == "gpt-5"
+    assert ir["planner"]["llm"] == "gpt-5.4-nano"
     assert ir["planner"]["persona"] == "planner"
     assert ir["executors"][0]["task"]["name"] == "WebResearch"
     assert ir["executors"][0]["name"] == "WebResearch"

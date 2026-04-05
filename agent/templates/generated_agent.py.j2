@@ -14,20 +14,18 @@ SOURCE_MODEL_PATH = {{ source_model_path|tojson }}
 SYSTEM_SPEC_JSON = r'''{{ spec_json }}'''
 
 
-def build_runtime(tool_executor=None, require_provider=False, use_dspy=False):
+def build_runtime(tool_executor=None, use_dspy=False):
     return AgentSystemRuntime(
         load_system_spec(SYSTEM_SPEC_JSON),
         tool_executor=tool_executor,
         source_model_path=SOURCE_MODEL_PATH,
-        require_provider=require_provider,
         use_dspy=use_dspy,
     )
 
 
-def run_agent(user_input: str, *, tool_executor=None, require_provider=False, use_dspy=False):
+def run_agent(user_input: str, *, tool_executor=None, use_dspy=False):
     runtime = build_runtime(
         tool_executor=tool_executor,
-        require_provider=require_provider,
         use_dspy=use_dspy,
     )
     return runtime.run(user_input)

@@ -15,7 +15,7 @@ def test_parse_minimal_model():
 
 def test_parse_full_model():
     system = parse_model("models/example_full.agent")
-    assert system.planner.llm == "gpt-5"
+    assert system.planner.llm == "gpt-5.4-nano"
     assert len(system.executors) == 2
     assert system.executors[0].task.name == "WebResearch"
 
@@ -23,19 +23,19 @@ def test_parse_full_model():
 def test_planner_auto_configured_from_defaults():
     system = parse_model("models/example_minimal.agent")
     assert system.planner.persona == "planner"
-    assert system.planner.llm == "gpt-5"
+    assert system.planner.llm == "gpt-5.4-nano"
     assert system.planner.reasoningStrategy == "chain-of-thought"
 
 
 def test_executor_inherits_global_defaults():
     system = parse_model("models/example_minimal.agent")
     executor = system.executors[0]
-    assert executor.llm == "gpt-5"
+    assert executor.llm == "gpt-5.4-nano"
     assert executor.reasoningStrategy == "chain-of-thought"
 
 
 def test_executor_can_override_defaults():
     system = parse_model("models/example_full.agent")
     editor = system.executors[1]  # TextEditor overrides llm and reasoning
-    assert editor.llm == "claude-sonnet-4.5"
+    assert editor.llm == "gpt-5.4-nano"
     assert editor.reasoningStrategy == "react"

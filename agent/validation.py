@@ -11,6 +11,9 @@ def validate_system(system):
     for executor in system.executors:
         validate_executor(executor)
         validate_executor_refs(executor, known_skill_names, known_rule_names)
+    if system.chat_agent is not None:
+        executor_names = {e.task.name for e in system.executors if e.task}
+        validate_chat_agent(system.chat_agent, executor_names)
 
 
 def validate_executor_refs(executor, known_skill_names, known_rule_names):
@@ -69,6 +72,22 @@ def validate_task(task):
 def validate_task_example(example):
     check_required(example, "input")
     check_required(example, "output")
+
+
+def validate_chat_agent(chat_agent, executor_names: set):
+    check_required(chat_agent, "name")
+    check_required(chat_agent, "persona")
+    check_required(chat_agent, "goal")
+    if not chat_agent.questions:
+        _raise_semantic(
+            f"ChatModeAgent '{chat_agent.name}' must define at least one question",
+            chat_agent,
+        )
+    if chat_agent.executor_ref is not None and chat_agent.executor_ref not in executor_names:
+        _raise_semantic(
+            f"ChatModeAgent '{chat_agent.name}' references unknown executor: '{chat_agent.executor_ref}'",
+            chat_agent,
+        )
 
 
 def validate_rules(rules):

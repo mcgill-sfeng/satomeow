@@ -52,3 +52,7 @@ Thumbs.db
 models/data_visualizer/.venv/
 models/data_visualizer/generated/
 models/data_visualizer/output/
+models/agent_composer/generated/
+models/generated/
+*.compiled.json
+tmp/

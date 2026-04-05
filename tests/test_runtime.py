@@ -129,7 +129,7 @@ def _make_executors_ir():
     return [
         {
             "name": "WebResearch",
-            "llm": "gpt-4o",
+            "llm": "gpt-5.4-nano",
             "persona": "research agent",
             "rules": [],
             "task": {
@@ -144,7 +144,7 @@ def _make_executors_ir():
         },
         {
             "name": "TextEditor",
-            "llm": "gpt-4o",
+            "llm": "gpt-5.4-nano",
             "persona": "editor agent",
             "rules": [],
             "task": {
@@ -175,7 +175,7 @@ def test_build_planner_agent_has_handoffs_for_each_executor():
         e["name"]: build_openai_agent(e, tool_executor=ShellToolExecutor(), use_dspy=False)
         for e in executors
     }
-    planner = build_planner_agent(executors, executor_agents, hooks, planner_llm="gpt-4o")
+    planner = build_planner_agent(executors, executor_agents, hooks, planner_llm="gpt-5.4-nano")
     assert planner.name == "Planner"
     handoff_names = {h.tool_name for h in planner.handoffs}
     assert "transfer_to_webresearch" in handoff_names
@@ -222,6 +222,8 @@ def test_agent_runtime_single_executor_runs_directly(monkeypatch):
 
     def fake_run_sync(agent, user_input, *, run_config, hooks=None, max_turns=None):
         captured["agent_name"] = agent.name
+        captured["agent_model"] = agent.model
+        captured["run_config"] = run_config
         return SimpleNamespace(
             final_output={"status": "success", "message": "ok", "artifact_path": "out.svg",
                           "preprocessed_data_path": "", "preprocessor_script_path": ""},
@@ -236,18 +238,20 @@ def test_agent_runtime_single_executor_runs_directly(monkeypatch):
     result = runtime.run("Visualize aligned_sales.json")
 
     assert captured["agent_name"] == "DataVisualizer"
+    assert captured["agent_model"] == "gpt-5.4-nano"
+    assert captured["run_config"].model is None
     assert result.executor_name == "DataVisualizer"
     assert result.planner_reason == "Direct execution (single executor)."
 
 
 def test_agent_runtime_coerces_structured_output(monkeypatch):
     system_spec = {
-        "planner": {"reasoning_strategy": "react", "llm": "test", "persona": "planner", "rules": []},
+        "planner": {"reasoning_strategy": "react", "llm": "gpt-5.4-nano", "persona": "planner", "rules": []},
         "executors": [
             {
                 "name": "Summarizer",
                 "reasoning_strategy": "react",
-                "llm": "test",
+                "llm": "gpt-5.4-nano",
                 "persona": "summarizer",
                 "rules": [],
                 "task": {
@@ -303,6 +307,8 @@ def test_agent_runtime_multi_executor_starts_with_planner(monkeypatch):
 
     def fake_run_sync(agent, user_input, *, run_config, hooks=None, max_turns=None):
         captured["agent_name"] = agent.name
+        captured["agent_model"] = agent.model
+        captured["run_config"] = run_config
         # Simulate SDK handoff: set hooks as if WebResearch was chosen
         if hooks is not None:
             hooks.executor_name = "WebResearch"
@@ -331,6 +337,8 @@ def test_agent_runtime_multi_executor_starts_with_planner(monkeypatch):
     result = runtime.run("Find a source")
 
     assert captured["agent_name"] == "Planner"
+    assert captured["agent_model"] == "gpt-5.4-nano"
+    assert captured["run_config"].model is None
     assert result.executor_name == "WebResearch"
     assert result.planner_reason == "User is asking for web research."
     assert result.output == "## Summary\n\nsource line"

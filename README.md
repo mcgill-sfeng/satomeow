@@ -40,7 +40,64 @@ python -m agent.cli run models/data_visualizer/data_visualizer.agent --verbose \
   "Visualize the aligned monthly sales data in models/data_visualizer/data/aligned_sales.json"
 ```
 
-4. Optionally enable example-focused prompt enrichment:
+Expected result:
+
+- Verbose output shows the selected executor, tool calls, and raw model responses
+- The final JSON contains `status: "success"`
+- The chart artifact is created at `models/data_visualizer/output/aligned_sales_chart.svg`
+
+4. Run the multi-executor `agent_composer` demo in one-shot mode:
+
+```bash
+python -m agent.cli run models/agent_composer/agent_composer.agent --json \
+  "Validate models/data_visualizer/data_visualizer.agent"
+```
+
+Expected result:
+
+- `executor_name` is `Validator`
+- `output.valid` is `true`
+- `output.errors` is an empty string
+
+5. Run the same `agent_composer` demo in interactive chat mode:
+
+```bash
+python -m agent.cli chat models/agent_composer/agent_composer.agent --verbose
+```
+
+Then answer the prompts like this:
+
+```text
+[1/5] What should the agent do? Describe the task in one or two sentences.
+> Draft short polite email replies.
+
+[2/5] What input does the agent accept? (e.g. a file path, a code snippet, a search query)
+> An incoming email plus a desired tone.
+
+[3/5] What output format do you want? (string, markdown, or json with named fields)
+> string
+
+[4/5] Does the agent need to run shell commands or scripts to complete its task? If so, briefly describe what tools it needs.
+> No shell tools are needed.
+
+[5/5] Any rules or constraints the agent must follow? (optional — press Enter to skip)
+> Keep replies under 120 words.
+```
+
+The runtime will print a confirmation message. Confirm with:
+
+```text
+Proceed? [Y/n] y
+```
+
+Expected result:
+
+- Verbose output shows the bundled chat input, then `Composer` is executed directly
+- The tool calls include `cat DSL_REFERENCE.md` and `python -m agent.cli inspect ...`
+- A new validated file is written at `models/agent_composer/generated/email_reply_drafter.agent`
+- The final line reports `Agent file created and validated successfully`
+
+6. Optionally enable example-focused prompt enrichment for the data visualizer demo:
 
 ```bash
 python -m agent.cli run models/data_visualizer/data_visualizer.agent --dspy --verbose \
@@ -48,6 +105,8 @@ python -m agent.cli run models/data_visualizer/data_visualizer.agent --dspy --ve
 ```
 
 ## DSL Syntax
+
+For the full language reference, see **[DSL_REFERENCE.md](DSL_REFERENCE.md)**.
 
 A `.agent` file begins with two global defaults, followed by any number of executor declarations, rules, and skills in
 any order.
@@ -57,13 +116,13 @@ llm: "<model-id>"
 reasoning: "<strategy>"
 
 TaskName : "persona" {
-    llm: "<override>"          // optional — inherits global if omitted
-    reasoning: "<override>"    // optional — inherits global if omitted
+    llm: "<override>"           // optional — inherits global if omitted
+    reasoning: "<override>"     // optional — inherits global if omitted
     input: "<description>"
     behavior: "<description>"
-    output: "<schema>"         // optional — defaults to "string"
-    skills: [skill1, skill2]   // optional
-    rules: [rule1, rule2]      // optional
+    output: string              // optional — string | markdown | json { ... } | toml { ... } | yaml { ... }
+    skills: [skill1, skill2]    // optional
+    rules: [rule1, rule2]       // optional
 
     example {
         input: "..."
@@ -76,7 +135,7 @@ do rule_name: "positive constraint description"
 dont rule_name: "negative constraint description"
 
 skill_name {
-    command: "<shell command template>"
+    command: "<shell command template with <param> placeholders>"
     description: "<description>"
     param param_name: "<description>"
 }
@@ -89,19 +148,23 @@ skill_name {
 - **Rules** are prefixed with `do` (positive) or `dont` (negative).
 - **Skills** are bare identifier blocks — no keyword prefix required.
 - Per-executor `llm` and `reasoning` override the global defaults when specified.
+- **Skills are optional** — pure LLM tasks (text conversion, Q&A, writing) need no `skills` block at all.
 
-## Output Schema
+## Output Formats
 
-`output` is intentionally simple:
+The `output:` field supports five formats:
 
-- `string` or `text` for plain text output
-- `markdown` for markdown output
-- A comma-separated field list for structured output, for example:
-  `answer: str, confidence: float, sources: list[str]`
+| Format | Example | Description |
+|---|---|---|
+| `string` | `output: string` | Plain text (default) |
+| `markdown` | `output: markdown` | Markdown-formatted text |
+| `json` | `output: json { status: str, count: int }` | JSON object, schema-validated, Pydantic-enforced |
+| `toml` | `output: toml { name: str, deps: list[str] }` | TOML, field-validated |
+| `yaml` | `output: yaml { key: str, value: float }` | YAML, field-validated |
 
-The runtime parses this compact schema and can coerce structured outputs to the declared types. Structured schemas are
-also compiled into Pydantic output models for the OpenAI Agents SDK. `--dspy` remains available as an optional
-example-driven prompt enrichment path.
+Allowed field types: `str`, `int`, `float`, `bool`, `list[str]`, `list[int]`, `list[float]`, `list[bool]`.
+
+See [DSL_REFERENCE.md](DSL_REFERENCE.md) for full details, constraints, and common error causes.
 
 ## Provider Configuration
 
