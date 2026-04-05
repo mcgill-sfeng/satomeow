@@ -44,7 +44,7 @@ Expected result:
 
 - Verbose output shows the selected executor, tool calls, and raw model responses
 - The final JSON contains `status: "success"`
-- The chart artifact is created at `models/data_visualizer/output/aligned_sales_chart.svg`
+- The chart artifact is created at `models/data_visualizer/output/aligned_chart.svg`
 
 4. Run the multi-executor `agent_composer` demo in one-shot mode:
 
