@@ -285,6 +285,8 @@ This repository includes the frontend compiler stages plus a code-generated runt
 - `--dspy` loads that sidecar when present and swaps the executor prompt examples to the compiled demonstrations
 - Without a sidecar, `--dspy` is only a light prompt-phrasing change and should not be treated as a proven quality gain
 - `python -m agent.cli portable ...` is currently experimental because asset bundling/path rewriting is not implemented yet
+- `--call-graph text|dot` on `run` prints the agent call graph after the run; `dot` mode emits a Graphviz digraph to
+  stdout (agent output goes to stderr) so it pipes directly to `dot -Tpng -o graph.png`
 
 ### 8. CLI Interface
 
@@ -292,6 +294,8 @@ This repository includes the frontend compiler stages plus a code-generated runt
 python -m agent.cli inspect models/example_full.agent --print-ir
 python -m agent.cli generate models/example_full.agent --output generated_agent.py
 python -m agent.cli run models/example_full.agent "Compare the REST and GraphQL APIs of GitHub"
+python -m agent.cli run models/example_full.agent --call-graph text "Compare the REST and GraphQL APIs of GitHub"
+python -m agent.cli run models/example_full.agent --call-graph dot "Compare the REST and GraphQL APIs of GitHub" | dot -Tpng -o graph.png
 python -m agent.cli prompt models/example_full.agent --planner "Compare the REST and GraphQL APIs of GitHub"
 python -m agent.cli compile models/data_visualizer/data_visualizer.agent --model openai/gpt-5.4-nano
 python -m agent.cli run models/example_full.agent --dspy "Compare the REST and GraphQL APIs of GitHub"

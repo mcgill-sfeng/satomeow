@@ -4,15 +4,18 @@ from types import SimpleNamespace
 
 import pytest
 from agents import Agent
-from agents.items import ToolCallOutputItem
+from agents.items import HandoffOutputItem, ToolCallItem, ToolCallOutputItem
 
 from agent.ir import build_prompt_ir
 from agent.parser import parse_model
 from agent.runtime import (
     AgentSystemRuntime,
+    CallEdge,
+    CallGraph,
     ShellToolExecutor,
     _HandoffCtx,
     _RoutingHooks,
+    build_call_graph,
     build_examples_prompt,
     build_executor_system_prompt,
     build_function_tool,
@@ -22,6 +25,8 @@ from agent.runtime import (
     build_planner_agent,
     build_planner_prompt,
     load_openai_config,
+    render_call_graph_dot,
+    render_call_graph_text,
     render_skill_command,
 )
 from agent.schema import coerce_structured_output, parse_output_schema
@@ -477,3 +482,152 @@ def test_runtime_raises_without_provider(tmp_path, monkeypatch):
     runtime = AgentSystemRuntime(prompt_ir, source_model_path=str(model_path))
     with pytest.raises(RuntimeError, match="No OpenAI provider configuration found"):
         runtime.run("Find a source")
+
+
+# ---------------------------------------------------------------------------
+# Call graph
+# ---------------------------------------------------------------------------
+
+
+def _make_tool_call_item(agent, call_id, tool_name, arguments_json):
+    """Build a ToolCallItem with a SimpleNamespace raw_item."""
+    raw = SimpleNamespace(name=tool_name, call_id=call_id, arguments=arguments_json)
+    return ToolCallItem(agent=agent, raw_item=raw)
+
+
+def _make_tool_output_item(agent, call_id, exit_code):
+    """Build a ToolCallOutputItem that looks like a shell tool result."""
+    return ToolCallOutputItem(
+        agent=agent,
+        raw_item={"type": "function_call_output", "call_id": call_id},
+        output={"command": "echo hi", "stdout": "hi", "stderr": "", "exit_code": exit_code},
+    )
+
+
+def _make_handoff_item(planner_agent, executor_agent):
+    """Build a HandoffOutputItem from planner to executor."""
+    return HandoffOutputItem(
+        agent=planner_agent,
+        raw_item={"type": "function_call_output"},
+        source_agent=planner_agent,
+        target_agent=executor_agent,
+    )
+
+
+def test_build_call_graph_empty_items():
+    graph = build_call_graph([], executor_name="Executor")
+    assert graph.edges == (CallEdge(from_node="Executor", to_node="[output]"),)
+
+
+def test_build_call_graph_single_tool_call():
+    agent = Agent(name="Executor")
+    items = [
+        _make_tool_call_item(agent, "cid_1", "run_shell", '{"cmd": "ls"}'),
+        _make_tool_output_item(agent, "cid_1", 0),
+    ]
+    graph = build_call_graph(items, executor_name="Executor")
+
+    edge_pairs = [(e.from_node, e.to_node) for e in graph.edges]
+    assert ("User", "Executor") in edge_pairs
+    assert ("Executor", "run_shell") in edge_pairs
+    assert ("run_shell", "Executor") in edge_pairs
+    assert ("Executor", "[output]") in edge_pairs
+
+
+def test_build_call_graph_tool_call_exit_code_label():
+    agent = Agent(name="Executor")
+    items = [
+        _make_tool_call_item(agent, "cid_1", "run_shell", '{"cmd": "ls"}'),
+        _make_tool_output_item(agent, "cid_1", 1),
+    ]
+    graph = build_call_graph(items, executor_name="Executor")
+    return_edge = next(e for e in graph.edges if e.from_node == "run_shell")
+    assert return_edge.label == "exit 1"
+
+
+def test_build_call_graph_repeated_tool_call_numbered():
+    agent = Agent(name="Executor")
+    items = [
+        _make_tool_call_item(agent, "cid_1", "run_shell", '{"cmd": "ls"}'),
+        _make_tool_output_item(agent, "cid_1", 0),
+        _make_tool_call_item(agent, "cid_2", "run_shell", '{"cmd": "pwd"}'),
+        _make_tool_output_item(agent, "cid_2", 0),
+    ]
+    graph = build_call_graph(items, executor_name="Executor")
+    to_nodes = [e.to_node for e in graph.edges]
+    assert "run_shell" in to_nodes
+    assert "run_shell#2" in to_nodes
+
+
+def test_build_call_graph_handoff():
+    planner = Agent(name="Planner")
+    executor = Agent(name="Summarizer")
+    items = [_make_handoff_item(planner, executor)]
+    graph = build_call_graph(items, executor_name="Summarizer")
+
+    edge_pairs = [(e.from_node, e.to_node) for e in graph.edges]
+    assert ("User", "Planner") in edge_pairs
+    assert ("Planner", "Summarizer") in edge_pairs
+    assert ("Summarizer", "[output]") in edge_pairs
+
+
+def test_render_call_graph_text_format():
+    graph = CallGraph(
+        edges=(
+            CallEdge("User", "Executor"),
+            CallEdge("Executor", "run_shell", label='cmd="ls"'),
+            CallEdge("run_shell", "Executor", label="exit 0"),
+            CallEdge("Executor", "[output]"),
+        )
+    )
+    text = render_call_graph_text(graph)
+    assert "[call graph]" in text
+    assert "User ──► Executor" in text
+    assert 'cmd="ls"' in text
+    assert "exit 0" in text
+    assert "Executor ──► [output]" in text
+
+
+def test_render_call_graph_dot_format():
+    graph = CallGraph(
+        edges=(
+            CallEdge("User", "Executor"),
+            CallEdge("Executor", "run_shell", label='cmd="ls"'),
+            CallEdge("Executor", "[output]"),
+        )
+    )
+    dot = render_call_graph_dot(graph)
+    assert "digraph agent_run" in dot
+    assert '"User" -> "Executor"' in dot
+    assert '"Executor" -> "[output]"' in dot
+    assert "label=" in dot
+
+
+def test_run_result_has_call_graph(monkeypatch):
+    """RunResult.call_graph is populated after a successful run."""
+    system = parse_model("models/example_minimal.agent")
+    prompt_ir = build_prompt_ir(system)
+    executor_agent = Agent(name=prompt_ir["executors"][0]["name"])
+
+    def fake_run_sync(agent, user_input, *, run_config, hooks=None, max_turns=None):
+        if hooks is not None:
+            hooks.executor_name = executor_agent.name
+        return SimpleNamespace(
+            final_output="ok",
+            raw_responses=[],
+            new_items=[
+                _make_tool_call_item(executor_agent, "cid_1", "echo_tool", '{"value": "hi"}'),
+                _make_tool_output_item(executor_agent, "cid_1", 0),
+            ],
+        )
+
+    monkeypatch.setattr("agent.runtime.Runner.run_sync", fake_run_sync)
+    monkeypatch.setenv("OPENAI_API_KEY", "secret")
+
+    runtime = AgentSystemRuntime(prompt_ir)
+    result = runtime.run("hello")
+
+    assert isinstance(result.call_graph, CallGraph)
+    to_nodes = {e.to_node for e in result.call_graph.edges}
+    assert "[output]" in to_nodes
+    assert "echo_tool" in to_nodes

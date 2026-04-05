@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import sys
 import tempfile
 from pathlib import Path
 
@@ -109,6 +110,13 @@ def _build_parser():
         "--dspy",
         action="store_true",
         help="Use the compile-time DSPy-style example prompt enrichment path",
+    )
+    run_parser.add_argument(
+        "--call-graph",
+        choices=["text", "dot"],
+        metavar="FORMAT",
+        dest="call_graph",
+        help="Print the agent call graph after the run (text or dot)",
     )
     run_parser.set_defaults(func=_run_generated_agent)
 
@@ -293,6 +301,11 @@ def _run_generated_agent(args):
             print(f"\n[raw_response {index}]\n{raw_response}", flush=True)
         print()
 
+    # When DOT output is requested, the graph must be the only thing on stdout
+    # so the result can be piped directly to `dot`. Everything else goes to stderr.
+    dot_mode = getattr(args, "call_graph", None) == "dot"
+    out = sys.stderr if dot_mode else sys.stdout
+
     if args.json:
         print(
             json.dumps(
@@ -316,15 +329,23 @@ def _run_generated_agent(args):
                     ],
                 },
                 indent=2,
-            )
+            ),
+            file=out,
         )
-        return
+        if not dot_mode:
+            return
 
-    if isinstance(result.output, dict):
-        print(json.dumps(result.output, indent=2))
-        return
+    elif isinstance(result.output, dict):
+        print(json.dumps(result.output, indent=2), file=out)
+    else:
+        print(result.output, file=out)
 
-    print(result.output)
+    if getattr(args, "call_graph", None):
+        if dot_mode:
+            print(result.call_graph.render_dot(), flush=True)
+        else:
+            print(flush=True)
+            print(result.call_graph.render_text(), flush=True)
 
 
 def _run_chat(args):

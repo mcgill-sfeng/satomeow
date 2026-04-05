@@ -26,6 +26,10 @@ python -m agent.cli generate models/example_full.agent --output generated_agent.
 # Run an agent directly (requires OPENAI_API_KEY in env or .env)
 python -m agent.cli run models/example_full.agent "Compare the REST and GraphQL APIs of GitHub"
 
+# Print a call graph of the run (text or dot/Graphviz)
+python -m agent.cli run models/example_full.agent --call-graph text "Compare the REST and GraphQL APIs of GitHub"
+python -m agent.cli run models/example_full.agent --call-graph dot "Compare the REST and GraphQL APIs of GitHub" | dot -Tpng -o graph.png
+
 # Print the prompt payload that would be sent for a given input
 python -m agent.cli prompt models/example_full.agent "Compare REST and GraphQL"
 
@@ -79,6 +83,9 @@ This is a **DSL compiler and runtime** for specifying AI agent systems via `.age
     - `build_openai_agent` — builds an executor Agent with tools and structured output type
     - `ShellToolExecutor` — runs shell commands rendered from skill templates
     - `render_skill_command` — interpolates `<param>` placeholders in skill command strings using `shlex.quote`
+    - `CallGraph` / `CallEdge` — directed call graph captured from a run; render via `.render_text()` or `.render_dot()`
+    - `build_call_graph` — walks `sdk_result.new_items` to produce `User → Planner → Executor → tools → [output]` edges;
+      repeated tool calls are numbered (`run_shell#2`); stored on `RunResult.call_graph`
 
 9. **Schema** (`agent/schema.py`) — Parses and coerces structured output schemas (`output_format` + `output_fields`).
    Supports `json`, `toml`, `yaml`, `markdown`, and `string`. Optionally bridges to DSPy signatures if `dspy` is

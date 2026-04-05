@@ -5,12 +5,12 @@ import os
 import re
 import shlex
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from agents import Agent, FunctionTool, RunConfig, Runner, handoff
-from agents.items import ToolCallOutputItem
+from agents.items import HandoffOutputItem, ToolCallItem, ToolCallOutputItem
 from agents.lifecycle import RunHooksBase
 from agents.model_settings import ModelSettings, Reasoning
 from agents.models.openai_provider import OpenAIProvider
@@ -38,6 +38,34 @@ class ToolResult:
 
 
 @dataclass(frozen=True)
+class CallEdge:
+    """A directed edge in the agent call graph."""
+
+    from_node: str
+    to_node: str
+    label: str = ""
+
+
+@dataclass(frozen=True)
+class CallGraph:
+    """Directed call graph captured from a single agent run.
+
+    Nodes are agent names, tool names (suffixed ``#N`` for repeated calls), and
+    the sentinel strings ``"User"`` and ``"[output]"``.
+    """
+
+    edges: tuple[CallEdge, ...] = ()
+
+    def render_text(self) -> str:
+        """Render as a human-readable edge list."""
+        return render_call_graph_text(self)
+
+    def render_dot(self) -> str:
+        """Render as a Graphviz DOT digraph."""
+        return render_call_graph_dot(self)
+
+
+@dataclass(frozen=True)
 class RunResult:
     executor_name: str
     planner_reason: str
@@ -48,6 +76,7 @@ class RunResult:
     user_input: str
     raw_responses: tuple[str, ...] = ()
     tool_results: tuple[ToolResult, ...] = ()
+    call_graph: CallGraph = field(default_factory=CallGraph)
 
 
 # ---------------------------------------------------------------------------
@@ -250,7 +279,7 @@ class AgentSystemRuntime:
             base_url=config.get("OPENAI_BASE_URL"),
         )
         return RunConfig(
-            model_provider=OpenAIProvider(openai_client=client, use_responses=False),
+            model_provider=OpenAIProvider(openai_client=client),
             tracing_disabled=True,
             workflow_name=f"{self.system_spec.get('planner', {}).get('persona', 'agent')} runtime",
         )
@@ -282,6 +311,7 @@ class AgentSystemRuntime:
         if schema.is_structured:
             output = coerce_structured_output(output, schema)
         tool_results = tuple(_extract_tool_results(sdk_result.new_items))
+        call_graph = build_call_graph(sdk_result.new_items, hooks.executor_name)
         raw_response = raw_responses[-1] if raw_responses else _stringify_output(output)
         return RunResult(
             executor_name=hooks.executor_name,
@@ -293,6 +323,7 @@ class AgentSystemRuntime:
             user_input=user_input,
             raw_responses=raw_responses,
             tool_results=tool_results,
+            call_graph=call_graph,
         )
 
     def generate_confirmation(
@@ -624,6 +655,117 @@ def candidate_dotenv_paths(source_model_path: str | None = None) -> list[Path]:
 # ---------------------------------------------------------------------------
 
 
+def build_call_graph(new_items: list[Any], executor_name: str) -> CallGraph:
+    """Build a CallGraph by walking the SDK item trace from a completed run.
+
+    Edges are emitted in execution order:
+    - ``User → first_agent`` (implicit start)
+    - ``Planner → ExecutorName`` for each handoff
+    - ``ExecutorName → tool_name[#N]`` for each tool call, with args as label
+    - ``tool_name[#N] → ExecutorName`` for each tool output, with exit code as label
+    - ``ExecutorName → [output]`` at the end
+    """
+    edges: list[CallEdge] = []
+    # call_id -> (agent_name, tool_node_name)
+    pending: dict[str, tuple[str, str]] = {}
+    tool_call_counts: dict[str, int] = {}
+    first_agent_seen: str | None = None
+
+    for item in new_items:
+        agent_name: str = item.agent.name if item.agent else "?"
+
+        if first_agent_seen is None:
+            first_agent_seen = agent_name
+            edges.append(CallEdge(from_node="User", to_node=agent_name))
+
+        if isinstance(item, HandoffOutputItem):
+            src = item.source_agent.name if item.source_agent else "?"
+            tgt = item.target_agent.name if item.target_agent else "?"
+            edges.append(CallEdge(from_node=src, to_node=tgt, label="handoff"))
+
+        elif isinstance(item, ToolCallItem):
+            raw = item.raw_item
+            if hasattr(raw, "name") and hasattr(raw, "call_id"):
+                tool_base = raw.name
+                count = tool_call_counts.get(tool_base, 0) + 1
+                tool_call_counts[tool_base] = count
+                tool_node = f"{tool_base}#{count}" if count > 1 else tool_base
+                try:
+                    args = json.loads(raw.arguments) if raw.arguments else {}
+                    label = _format_tool_args(args)
+                except Exception:
+                    label = _truncate_value((raw.arguments or ""), 60)
+                pending[raw.call_id] = (agent_name, tool_node)
+                edges.append(CallEdge(from_node=agent_name, to_node=tool_node, label=label))
+
+        elif isinstance(item, ToolCallOutputItem):
+            raw = item.raw_item
+            call_id = raw.get("call_id") if isinstance(raw, dict) else getattr(raw, "call_id", None)
+            if call_id and call_id in pending:
+                orig_agent, tool_node = pending.pop(call_id)
+                output = item.output
+                if isinstance(output, dict) and "exit_code" in output:
+                    label = f"exit {output['exit_code']}"
+                else:
+                    label = str(output)[:40]
+                edges.append(CallEdge(from_node=tool_node, to_node=orig_agent, label=label))
+
+    edges.append(CallEdge(from_node=executor_name, to_node="[output]"))
+    return CallGraph(edges=tuple(edges))
+
+
+def render_call_graph_text(graph: CallGraph) -> str:
+    """Render the call graph as a merged edge list.
+
+    Adjacent call/return pairs (``A → tool`` followed by ``tool → A``) are
+    collapsed onto a single line:  ``A ──► tool(args)  → exit N``
+    """
+    lines = ["[call graph]"]
+    edges = list(graph.edges)
+    i = 0
+    while i < len(edges):
+        edge = edges[i]
+        next_edge = edges[i + 1] if i + 1 < len(edges) else None
+        # Detect a matched call/return pair.
+        is_call_return = (
+            next_edge is not None and next_edge.from_node == edge.to_node and next_edge.to_node == edge.from_node
+        )
+        if is_call_return:
+            call_label = f"({edge.label})" if edge.label else ""
+            ret_label = f"  → {next_edge.label}" if next_edge.label else ""
+            lines.append(f"{edge.from_node} ──► {edge.to_node}{call_label}{ret_label}")
+            i += 2
+        else:
+            suffix = f"  ({edge.label})" if edge.label else ""
+            lines.append(f"{edge.from_node} ──► {edge.to_node}{suffix}")
+            i += 1
+    return "\n".join(lines)
+
+
+def render_call_graph_dot(graph: CallGraph) -> str:
+    """Render the call graph as a Graphviz DOT digraph."""
+    terminal_nodes = {"User", "[output]"}
+    lines = [
+        "digraph agent_run {",
+        "  rankdir=LR;",
+        '  node [shape=box fontname="Helvetica" style=filled fillcolor=white];',
+    ]
+    # Special shapes for terminal nodes
+    for node in terminal_nodes:
+        label = node.replace("[", "").replace("]", "")
+        lines.append(f'  "{node}" [shape=ellipse label="{label}"];')
+    for edge in graph.edges:
+        src = edge.from_node.replace('"', '\\"')
+        tgt = edge.to_node.replace('"', '\\"')
+        if edge.label:
+            lbl = edge.label.replace('"', '\\"')
+            lines.append(f'  "{src}" -> "{tgt}" [label="{lbl}"];')
+        else:
+            lines.append(f'  "{src}" -> "{tgt}";')
+    lines.append("}")
+    return "\n".join(lines)
+
+
 def _extract_tool_results(items: list[Any]) -> list[ToolResult]:
     results = []
     for item in items:
@@ -708,3 +850,21 @@ def _format_example(example: dict[str, Any]) -> str:
 def _format_example_command(command: dict[str, Any]) -> str:
     args = ", ".join(f"{arg['name']}={json.dumps(arg['value'])}" for arg in command["arguments"])
     return f"{command['tool_name']}({args})"
+
+
+def _truncate_value(value: str, max_len: int) -> str:
+    """Normalise whitespace and truncate with an ellipsis if needed."""
+    # Collapse all whitespace (newlines, tabs, runs of spaces) into a single space.
+    normalised = re.sub(r"\s+", " ", value).strip()
+    if len(normalised) > max_len:
+        return normalised[: max_len - 1] + "…"
+    return normalised
+
+
+def _format_tool_args(args: dict[str, Any]) -> str:
+    """Format a tool's argument dict as a compact ``key="value"`` string."""
+    parts = []
+    for k, v in args.items():
+        v_str = _truncate_value(str(v), 50)
+        parts.append(f'{k}="{v_str}"')
+    return ", ".join(parts)
