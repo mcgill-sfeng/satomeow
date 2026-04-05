@@ -10,9 +10,12 @@ Composer : "agent file composer" {
     example {
         input: "I need an agent that summarizes web pages. Save it to models/agent_composer/generated/summarizer.agent"
         commands: [
-            "cat grammar/agent.tx",
-            "python models/agent_composer/scripts/write_file.py --path models/agent_composer/generated/summarizer.agent --content 'llm: \"gpt-5.4-nano\"\n\nSummarize : \"web page summarizer\" {\n    input: \"A URL or block of web text to summarise\"\n    behavior: \"Fetch the page if a URL is given, extract main body text, and return a concise plain-text summary\"\n    output: string\n    skills: [fetchPage]\n    rules: [be_concise]\n}\n\ndo be_concise: \"keep summaries under 150 words\"\n\nfetchPage {\n    command: \"curl -s <url>\"\n    description: \"Fetch the raw HTML of a web page\"\n    param url: \"The URL to fetch\"\n}\n'",
-            "python -m agent.cli inspect models/agent_composer/generated/summarizer.agent --print-ir"
+            read_file(path: "DSL_REFERENCE.md"),
+            write_file(
+                path: "models/agent_composer/generated/summarizer.agent",
+                content: "llm: \"gpt-5.4-nano\"\n\nSummarize : \"web page summarizer\" {\n    input: \"A URL or block of web text to summarise\"\n    behavior: \"Fetch the page if a URL is given, extract main body text, and return a concise plain-text summary\"\n    output: string\n    skills: [fetchPage]\n    rules: [be_concise]\n}\n\ndo be_concise: \"keep summaries under 150 words\"\n\nfetchPage {\n    command: \"curl -s <url>\"\n    description: \"Fetch the raw HTML of a web page\"\n    param url: \"The URL to fetch\"\n}\n"
+            ),
+            run_inspect(path: "models/agent_composer/generated/summarizer.agent")
         ]
         output: "Agent file created and validated successfully. Path: models/agent_composer/generated/summarizer.agent"
     }
@@ -32,8 +35,8 @@ Validator : "agent file validator" {
     example {
         input: "Validate models/data_visualizer/data_visualizer.agent"
         commands: [
-            "cat models/data_visualizer/data_visualizer.agent",
-            "python -m agent.cli inspect models/data_visualizer/data_visualizer.agent --print-ir"
+            read_file(path: "models/data_visualizer/data_visualizer.agent"),
+            run_inspect(path: "models/data_visualizer/data_visualizer.agent")
         ]
         output: "{\"valid\": true, \"errors\": \"\", \"suggestions\": \"Valid. DataVisualizer has one executor with JSON output (5 fields), 3 skills, 2 rules.\"}"
     }

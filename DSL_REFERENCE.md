@@ -274,7 +274,9 @@ Examples are optional few-shot demonstrations declared inside an executor block.
 ```
 example {
     input: "example user input string"
-    commands: ["shell cmd 1", "shell cmd 2"]
+    commands: [
+        someTool(arg1: "value", arg2: "value")
+    ]
     output: "expected output string"
 }
 ```
@@ -282,8 +284,20 @@ example {
 | Field | Description |
 |---|---|
 | `input` | The example user input. Quoted string. |
-| `commands` | List of shell commands the agent called. Use `[]` for no commands. |
+| `commands` | List of structured tool calls. Use `[]` for no commands. Each entry must name a skill referenced by the executor and provide all of that skill's parameters. |
 | `output` | The expected output. Quoted string. For JSON output, embed the JSON as a string. |
+
+### Tool-call syntax
+
+Each example command uses function-call syntax:
+
+```
+toolName(arg1: "value", arg2: "value")
+```
+
+- `toolName` must match a skill available to that executor
+- Every skill parameter must be present exactly once
+- Values are strings, because current runtime tool arguments are string-typed
 
 Multiple `example` blocks can appear inside one executor. They are listed after `rules:` and before the closing `}`.
 
@@ -364,7 +378,9 @@ DataFetcher : "data retrieval agent" {
 
     example {
         input: "Fetch https://example.com"
-        commands: ["curl -s https://example.com"]
+        commands: [
+            fetchPage(url: "https://example.com")
+        ]
         output: "{\"url\": \"https://example.com\", \"status_code\": 200, \"body\": \"<html>...\"}"
     }
 }

@@ -16,8 +16,13 @@ DataVisualizer : "data visualization agent" {
     example {
         input: "Visualize the aligned monthly sales data in models/data_visualizer/data/aligned_sales.json"
         commands: [
-            "DEMO_ROOT=\"models/data_visualizer\"; REQ=\"$DEMO_ROOT/requirements.txt\"; if [ ! -d \"$DEMO_ROOT/.venv\" ]; then python3 -m venv \"$DEMO_ROOT/.venv\" || python3 -m venv --without-pip \"$DEMO_ROOT/.venv\"; fi; if [ -x \"$DEMO_ROOT/.venv/bin/pip\" ] && grep -q '[^[:space:]#]' \"$REQ\"; then \"$DEMO_ROOT/.venv/bin/pip\" install -r \"$REQ\"; fi",
-            "DEMO_ROOT=\"models/data_visualizer\"; \"$DEMO_ROOT/.venv/bin/python\" \"$DEMO_ROOT/scripts/visualize_data.py\" --input \"$DEMO_ROOT/data/aligned_sales.json\" --output \"$DEMO_ROOT/output/aligned_chart.svg\""
+            preparePythonEnv(demo_root: "models/data_visualizer"),
+            runPythonScript(
+                python_bin: "models/data_visualizer/.venv/bin/python",
+                script_path: "models/data_visualizer/scripts/visualize_data.py",
+                input_path: "models/data_visualizer/data/aligned_sales.json",
+                output_path: "models/data_visualizer/output/aligned_chart.svg"
+            )
         ]
         output: "{\"status\":\"success\",\"message\":\"Visualization created directly from aligned input.\",\"artifact_path\":\"models/data_visualizer/output/aligned_chart.svg\",\"preprocessed_data_path\":\"\",\"preprocessor_script_path\":\"\"}"
     }
@@ -25,10 +30,25 @@ DataVisualizer : "data visualization agent" {
     example {
         input: "Visualize the monthly revenue CSV in models/data_visualizer/data/monthly_revenue.csv"
         commands: [
-            "DEMO_ROOT=\"models/data_visualizer\"; REQ=\"$DEMO_ROOT/requirements.txt\"; if [ ! -d \"$DEMO_ROOT/.venv\" ]; then python3 -m venv \"$DEMO_ROOT/.venv\" || python3 -m venv --without-pip \"$DEMO_ROOT/.venv\"; fi; if [ -x \"$DEMO_ROOT/.venv/bin/pip\" ] && grep -q '[^[:space:]#]' \"$REQ\"; then \"$DEMO_ROOT/.venv/bin/pip\" install -r \"$REQ\"; fi",
-            "DEMO_ROOT=\"models/data_visualizer\"; \"$DEMO_ROOT/.venv/bin/python\" \"$DEMO_ROOT/scripts/write_preprocessor.py\" --template monthly_csv_to_json --output \"$DEMO_ROOT/generated/monthly_csv_to_json.py\"",
-            "DEMO_ROOT=\"models/data_visualizer\"; \"$DEMO_ROOT/.venv/bin/python\" \"$DEMO_ROOT/generated/monthly_csv_to_json.py\" --input \"$DEMO_ROOT/data/monthly_revenue.csv\" --output \"$DEMO_ROOT/generated/monthly_revenue_converted.json\"",
-            "DEMO_ROOT=\"models/data_visualizer\"; \"$DEMO_ROOT/.venv/bin/python\" \"$DEMO_ROOT/scripts/visualize_data.py\" --input \"$DEMO_ROOT/generated/monthly_revenue_converted.json\" --output \"$DEMO_ROOT/output/converted_chart.svg\""
+            preparePythonEnv(demo_root: "models/data_visualizer"),
+            writePreprocessor(
+                python_bin: "models/data_visualizer/.venv/bin/python",
+                writer_script_path: "models/data_visualizer/scripts/write_preprocessor.py",
+                template_name: "monthly_csv_to_json",
+                output_script_path: "models/data_visualizer/generated/monthly_csv_to_json.py"
+            ),
+            runPythonScript(
+                python_bin: "models/data_visualizer/.venv/bin/python",
+                script_path: "models/data_visualizer/generated/monthly_csv_to_json.py",
+                input_path: "models/data_visualizer/data/monthly_revenue.csv",
+                output_path: "models/data_visualizer/generated/monthly_revenue_converted.json"
+            ),
+            runPythonScript(
+                python_bin: "models/data_visualizer/.venv/bin/python",
+                script_path: "models/data_visualizer/scripts/visualize_data.py",
+                input_path: "models/data_visualizer/generated/monthly_revenue_converted.json",
+                output_path: "models/data_visualizer/output/converted_chart.svg"
+            )
         ]
         output: "{\"status\":\"success\",\"message\":\"The CSV data was converted with a newly written preprocessing script before visualization.\",\"artifact_path\":\"models/data_visualizer/output/converted_chart.svg\",\"preprocessed_data_path\":\"models/data_visualizer/generated/monthly_revenue_converted.json\",\"preprocessor_script_path\":\"models/data_visualizer/generated/monthly_csv_to_json.py\"}"
     }

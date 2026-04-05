@@ -17,7 +17,18 @@ Processing order (textX runs processors bottom-up):
   Model    (no-op at processor level; transformed by build_system_from_model)
 """
 
-from agent.metamodel import System, Planner, Executor, Task, OutputSpec, OutputField, SkillArgument, ChatModeAgent
+from agent.metamodel import (
+    System,
+    Planner,
+    Executor,
+    Task,
+    OutputSpec,
+    OutputField,
+    SkillArgument,
+    ChatModeAgent,
+    ExampleCommand,
+    ExampleCommandArgument,
+)
 
 
 def build_system_from_model(model):
@@ -79,7 +90,7 @@ def build_system_from_model(model):
             task.inputDescription = item.inputDescription
             task.behavior = item.behavior
             task.outputSpec = _build_output_spec(item.outputSpec)
-            task.examples = list(item.examples)
+            task.examples = [_build_example(example) for example in item.examples]
             task.skills = [skills_by_name[s] for s in skill_refs if s in skills_by_name]
             task._source_obj = item
             task._skill_refs = skill_refs
@@ -129,6 +140,22 @@ def _build_output_spec(raw_spec) -> OutputSpec:
 
     # Fallback: unknown spec type — treat as plain string
     return OutputSpec(format="string", fields=[])
+
+
+def _build_example(raw_example):
+    raw_example.commands = [_build_example_command(command) for command in (raw_example.commands or [])]
+    return raw_example
+
+
+def _build_example_command(raw_command) -> ExampleCommand:
+    command = ExampleCommand(toolName=raw_command.toolName)
+    command._source_obj = raw_command
+    command.arguments = []
+    for raw_argument in raw_command.arguments or []:
+        argument = ExampleCommandArgument(name=raw_argument.name, value=raw_argument.value)
+        argument._source_obj = raw_argument
+        command.arguments.append(argument)
+    return command
 
 
 def process_rule(rule):

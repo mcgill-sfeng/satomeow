@@ -170,7 +170,7 @@ TaskName : "persona" {
 
     example {
         input: "..."
-        commands: ["cmd1", "cmd2"]
+        commands: [toolName(arg: "value")]
         output: "..."
     }
 }

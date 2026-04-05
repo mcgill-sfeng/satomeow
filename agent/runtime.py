@@ -694,5 +694,10 @@ def _format_output_spec(task: dict[str, Any]) -> str:
 
 
 def _format_example(example: dict[str, Any]) -> str:
-    commands = ", ".join(example["commands"]) or "no commands"
+    commands = ", ".join(_format_example_command(command) for command in example["commands"]) or "no commands"
     return f"Input: {example['input']}\n" f"Command trajectory: {commands}\n" f"Final output: {example['output']}"
+
+
+def _format_example_command(command: dict[str, Any]) -> str:
+    args = ", ".join(f"{arg['name']}={json.dumps(arg['value'])}" for arg in command["arguments"])
+    return f"{command['tool_name']}({args})"

@@ -69,12 +69,45 @@ def validate_task(task):
         task.outputSpec = OutputSpec(format="string", fields=[])
 
     for example in task.examples:
-        validate_task_example(example)
+        validate_task_example(example, task)
 
-
-def validate_task_example(example):
+def validate_task_example(example, task):
     check_required(example, "input")
     check_required(example, "output")
+    known_skills = {skill.name: skill for skill in task.skills}
+    for command in getattr(example, "commands", []) or []:
+        check_required(command, "toolName")
+        if command.toolName not in known_skills:
+            _raise_semantic(
+                f"Unknown example command tool: '{command.toolName}'",
+                command,
+            )
+        validate_example_command_arguments(command, known_skills[command.toolName])
+
+
+def validate_example_command_arguments(command, skill):
+    seen = set()
+    known_args = {arg.name for arg in skill.skillArguments}
+    for argument in command.arguments or []:
+        check_required(argument, "name")
+        check_required(argument, "value")
+        if argument.name in seen:
+            _raise_semantic(
+                f"Duplicate example command argument '{argument.name}' for tool '{command.toolName}'",
+                argument,
+            )
+        seen.add(argument.name)
+        if argument.name not in known_args:
+            _raise_semantic(
+                f"Unknown example command argument '{argument.name}' for tool '{command.toolName}'",
+                argument,
+            )
+    missing = known_args - seen
+    if missing:
+        _raise_semantic(
+            f"Missing example command arguments for tool '{command.toolName}': {', '.join(sorted(missing))}",
+            command,
+        )
 
 
 def validate_chat_agent(chat_agent, executor_names: set):

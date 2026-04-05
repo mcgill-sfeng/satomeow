@@ -93,3 +93,15 @@ class SkillArgument:
     def __init__(self, name=None, description=None):
         self.name = name
         self.description = description
+
+
+class ExampleCommandArgument:
+    def __init__(self, name=None, value=None):
+        self.name = name
+        self.value = value
+
+
+class ExampleCommand:
+    def __init__(self, toolName=None, arguments=None):
+        self.toolName = toolName
+        self.arguments = arguments or []

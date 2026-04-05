@@ -142,7 +142,7 @@ Hello : "shell agent" {
 
     example {
         input: "Say hello"
-        commands: ["printf 'hello from runtime'"]
+        commands: []
         output: "hello from runtime"
     }
 }

@@ -94,9 +94,17 @@ OutputFieldType:
 Example:
     'example' '{'
         'input' ':' input=STRING
-        'commands' ':' '[' commands*=STRING[','] ']'
+        'commands' ':' '[' commands*=ExampleCommand[','] ']'
         'output' ':' output=STRING
     '}'
+;
+
+ExampleCommand:
+    toolName=ID '(' (arguments+=ExampleCommandArgument[','])? ')'
+;
+
+ExampleCommandArgument:
+    name=ID ':' value=STRING
 ;
 
 // ruleType captures the literal 'do' or 'dont' string via a named string rule.

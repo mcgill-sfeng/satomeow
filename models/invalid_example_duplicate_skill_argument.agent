@@ -6,7 +6,7 @@ Summarize : "text summarizer" {
     skills: [web_search]
     example {
         input: "doc text"
-        commands: ["read"]
+        commands: [web_search(query: "doc text")]
         output: "summary"
     }
 }

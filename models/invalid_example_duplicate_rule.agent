@@ -5,7 +5,7 @@ Summarize : "text summarizer" {
     behavior: "Summarize the document"
     example {
         input: "doc text"
-        commands: ["read"]
+        commands: []
         output: "summary"
     }
 }

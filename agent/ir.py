@@ -51,7 +51,16 @@ def build_prompt_ir(system) -> dict:
                 "examples": [
                     {
                         "input": ex.input,
-                        "commands": list(ex.commands),
+                        "commands": [
+                            {
+                                "tool_name": command.toolName,
+                                "arguments": [
+                                    {"name": argument.name, "value": argument.value}
+                                    for argument in command.arguments
+                                ],
+                            }
+                            for command in ex.commands
+                        ],
                         "output": ex.output,
                     }
                     for ex in executor.task.examples

@@ -123,8 +123,26 @@ Represents one few-shot example for a task.
 Attributes:
 
 - `input: str`
-- `commands: list[str]`
+- `commands: list[ExampleCommand]`
 - `output: str`
+
+### ExampleCommand
+
+Represents one structured tool call inside an example.
+
+Attributes:
+
+- `toolName: str`
+- `arguments: list[ExampleCommandArgument]`
+
+### ExampleCommandArgument
+
+Represents one string argument passed to an example tool call.
+
+Attributes:
+
+- `name: str`
+- `value: str`
 
 ---
 
@@ -209,4 +227,3 @@ from agent.parser import parse_model
 system = parse_model("models/example_full.agent")
 print(system.planner.persona)
 ```
-
