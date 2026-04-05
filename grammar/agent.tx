@@ -19,7 +19,7 @@
 
 Model:
     'llm' ':' llm=STRING
-    'reasoning' ':' reasoningStrategy=STRING
+    ('reasoning' ':' reasoningStrategy=STRING)?
     items*=Item
 ;
 
@@ -79,6 +79,7 @@ StructuredOutputFormat:
 TextOutputFormat:
     'string' | 'markdown'
 ;
+
 
 OutputField:
     name=ID ':' type=OutputFieldType

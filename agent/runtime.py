@@ -12,6 +12,7 @@ from typing import Any
 from agents import Agent, FunctionTool, RunConfig, Runner, handoff
 from agents.items import ToolCallOutputItem
 from agents.lifecycle import RunHooksBase
+from agents.model_settings import ModelSettings, Reasoning
 from agents.models.openai_provider import OpenAIProvider
 from agents.run_context import RunContextWrapper
 from dotenv import dotenv_values
@@ -129,6 +130,7 @@ def build_planner_agent(
     executor_agents: dict[str, Agent[Any]],
     hooks: _RoutingHooks,
     planner_llm: str,
+    planner_reasoning_effort: str | None = None,
 ) -> Agent[Any]:
     """Build a static routing Agent whose only role is to hand off to the right executor."""
 
@@ -151,6 +153,7 @@ def build_planner_agent(
         name="Planner",
         instructions=build_planner_prompt(executors),
         model=planner_llm,
+        model_settings=build_model_settings(planner_reasoning_effort),
         handoffs=handoffs,
     )
 
@@ -212,8 +215,15 @@ class AgentSystemRuntime:
                 e["name"]: build_openai_agent(e, tool_executor=self.tool_executor, use_dspy=self.use_dspy)
                 for e in executors
             }
-            planner_llm = self.system_spec.get("planner", {}).get("llm") or executors[0]["llm"]
-            planner = build_planner_agent(executors, executor_agents, hooks, planner_llm)
+            planner_spec = self.system_spec.get("planner", {})
+            planner_llm = planner_spec.get("llm") or executors[0]["llm"]
+            planner = build_planner_agent(
+                executors,
+                executor_agents,
+                hooks,
+                planner_llm,
+                planner_spec.get("reasoning_strategy"),
+            )
             sdk_result = Runner.run_sync(planner, user_input, run_config=run_config, hooks=hooks, max_turns=self.max_turns)
 
             if hooks.executor_name is None:
@@ -308,6 +318,7 @@ class AgentSystemRuntime:
                 "message summarizing what will be done, then ask the user to confirm."
             ),
             model=llm,
+            model_settings=build_model_settings(chat_agent.get("reasoning_strategy")),
         )
         sdk_result = Runner.run_sync(agent, prompt, run_config=run_config, max_turns=1)
         return str(sdk_result.final_output)
@@ -344,9 +355,16 @@ def build_openai_agent(
         name=executor["name"],
         instructions=build_executor_system_prompt(executor, use_dspy=use_dspy),
         model=executor["llm"],
+        model_settings=build_model_settings(executor.get("reasoning_strategy")),
         tools=[build_function_tool(skill, tool_executor=tool_executor) for skill in executor["task"]["skills"]],
         output_type=build_output_type(executor["task"]["output_format"], executor["task"]["output_fields"], executor["name"]),
     )
+
+
+def build_model_settings(reasoning_effort: str | None) -> ModelSettings:
+    if reasoning_effort is None:
+        return ModelSettings()
+    return ModelSettings(reasoning=Reasoning(effort=reasoning_effort))
 
 
 def build_executor_system_prompt(

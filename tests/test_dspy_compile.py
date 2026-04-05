@@ -118,7 +118,7 @@ def test_compile_system_spec_skips_executors_without_examples(tmp_path):
     # Parse a model whose executors have no examples
     from agent.parser import parse_model_text
     text = (
-        'llm: "gpt-5.4-nano"\nreasoning: "react"\n'
+        'llm: "gpt-5.4-nano"\nreasoning: "medium"\n'
         'A : "a" { input: "x" behavior: "y" }\n'
     )
     ir = build_prompt_ir(parse_model_text(text))
@@ -238,7 +238,7 @@ def test_compile_cli_no_examples_prints_message(tmp_path, capsys):
     from agent.parser import parse_model_text
 
     # Write a real .agent file with no examples so the CLI can parse it from disk.
-    text = 'llm: "gpt-5.4-nano"\nreasoning: "react"\nA : "a" { input: "x" behavior: "y" }\n'
+    text = 'llm: "gpt-5.4-nano"\nreasoning: "medium"\nA : "a" { input: "x" behavior: "y" }\n'
     model_file = tmp_path / "no_examples.agent"
     model_file.write_text(text, encoding="utf-8")
 

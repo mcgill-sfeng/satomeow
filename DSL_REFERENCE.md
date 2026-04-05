@@ -36,19 +36,19 @@ Items can appear in any order after the header. There is no required ordering be
 
 ## Global Header
 
-The first two lines of every `.agent` file:
+The file starts with a required `llm` line and may optionally include a `reasoning` line:
 
 ```
 llm: "model-name"
-reasoning: "strategy"
+reasoning: "effort"
 ```
 
 | Field | Type | Description |
 |---|---|---|
 | `llm` | string | Default model ID for all executors. Example: `"gpt-5.4-nano"`. |
-| `reasoning` | string | Default reasoning strategy. Use `"react"` for tool-using agents or `"chain-of-thought"` for reasoning-only agents. |
+| `reasoning` | enum | Optional default reasoning effort passed to the OpenAI Agents SDK. Allowed values: `"none"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, `"xhigh"`. |
 
-Both fields are required and must appear before any item declarations.
+`llm` is required and must appear before any item declarations. `reasoning` is optional; if omitted, the runtime leaves reasoning effort unset.
 
 ---
 
@@ -59,7 +59,7 @@ An executor is the primary working unit of the agent system. Syntax:
 ```
 TaskName : "persona string" {
     llm: "override-model"           -- optional
-    reasoning: "override-strategy"  -- optional
+    reasoning: "override-effort"    -- optional
     input: "what this executor accepts"
     behavior: "what this executor does"
     output: <OutputSpec>            -- optional, defaults to string
@@ -84,7 +84,7 @@ TaskName : "persona string" {
 | Field | Description |
 |---|---|
 | `llm` | Override the global model for this executor only. |
-| `reasoning` | Override the global reasoning strategy for this executor only. |
+| `reasoning` | Override the global reasoning effort for this executor only. Must use the same enum. |
 | `output` | Output format specification. See [Output Specification](#output-specification). Defaults to `string`. |
 | `skills` | Comma-separated list of skill names defined elsewhere in the file. |
 | `rules` | Comma-separated list of rule names defined elsewhere in the file. |
@@ -106,7 +106,7 @@ A `chat` block defines an **interactive intake agent**. It is a different kind o
 ```
 chat AgentName : "persona" {
     llm: "override-model"       // optional
-    reasoning: "react"          // optional
+    reasoning: "medium"         // optional
     goal: "one-sentence description of what task will be performed"
     questions: [
         "First question to ask the user?",
@@ -126,7 +126,7 @@ chat AgentName : "persona" {
 | `goal` | Yes | Describes the task that will be performed once all information is collected. Used by the LLM to generate the confirmation message. |
 | `questions` | Yes | Ordered list of quoted strings. The runtime asks them one at a time. At least one question is required. |
 | `executor` | No | Name of the executor to hand off to after confirmation. If omitted, the planner routes based on the collected input. |
-| `llm` / `reasoning` | No | Override the global model/strategy for the confirmation LLM call. |
+| `llm` / `reasoning` | No | Override the global model / reasoning effort for the confirmation LLM call. |
 
 ### Runtime behaviour
 
@@ -338,7 +338,7 @@ A `.agent` file can declare any number of executors. When multiple executors are
 ```
 // Global defaults — required, always first
 llm: "gpt-5.4-nano"
-reasoning: "react"
+reasoning: "medium"
 
 // --- Executor 1: pure LLM, no skills needed ---
 Summarizer : "text summarization agent" {
@@ -351,7 +351,7 @@ Summarizer : "text summarization agent" {
 // --- Executor 2: tool-using agent ---
 DataFetcher : "data retrieval agent" {
     llm: "gpt-5.4-nano"         // per-executor model override
-    reasoning: "chain-of-thought"
+    reasoning: "medium"
     input: "A URL or search query for data to retrieve"
     behavior: "Fetch the requested data using available tools and return it verbatim"
     output: json {

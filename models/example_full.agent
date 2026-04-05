@@ -1,5 +1,5 @@
 llm: "gpt-5.4-nano"
-reasoning: "chain-of-thought"
+reasoning: "medium"
 
 WebResearch : "research agent" {
     input: "A user question requiring web research"
@@ -23,7 +23,7 @@ WebResearch : "research agent" {
 
 TextEditor : "editor agent" {
     llm: "gpt-5.4-nano"
-    reasoning: "react"
+    reasoning: "medium"
     input: "Text to edit with instructions"
     behavior: "Apply edits based on user instructions"
     rules: [no_hallucination]

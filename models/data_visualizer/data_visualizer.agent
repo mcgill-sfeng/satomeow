@@ -1,5 +1,4 @@
 llm: "gpt-5.4-nano"
-reasoning: "react"
 
 DataVisualizer : "data visualization agent" {
     input: "A request to visualize a dataset from models/data_visualizer/data"

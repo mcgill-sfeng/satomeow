@@ -59,6 +59,19 @@ Expected result:
 - `output.valid` is `true`
 - `output.errors` is an empty string
 
+You can also generate a new `.agent` file in one shot:
+
+```bash
+python -m agent.cli run models/agent_composer/agent_composer.agent \
+  "Create an agent that drafts short polite email replies. Input: an incoming email plus a desired tone. Output: string. No shell tools needed. Save it to models/agent_composer/generated/email_reply_drafter.agent"
+```
+
+Expected result:
+
+- The request is routed to `Composer`
+- The tool calls include `cat DSL_REFERENCE.md`, a file write, and `python -m agent.cli inspect ...`
+- A valid file is created at `models/agent_composer/generated/email_reply_drafter.agent`
+
 5. Run the same `agent_composer` demo in interactive chat mode:
 
 ```bash
@@ -120,16 +133,16 @@ Important note:
 
 For the full language reference, see **[DSL_REFERENCE.md](DSL_REFERENCE.md)**.
 
-A `.agent` file begins with two global defaults, followed by any number of executor declarations, chat declarations,
+A `.agent` file begins with a required global `llm` default plus an optional global `reasoning` default, followed by any number of executor declarations, chat declarations,
 rules, and skills in any order.
 
 ```text
 llm: "<model-id>"
-reasoning: "<strategy>"
+reasoning: "<effort>"          // optional; one of: none | minimal | low | medium | high | xhigh
 
 TaskName : "persona" {
     llm: "<override>"           // optional — inherits global if omitted
-    reasoning: "<override>"     // optional — inherits global if omitted
+    reasoning: "<override>"     // optional — same enum, inherits global if omitted
     input: "<description>"
     behavior: "<description>"
     output: string              // optional — string | markdown | json { ... } | toml { ... } | yaml { ... }
@@ -145,7 +158,7 @@ TaskName : "persona" {
 
 chat AgentName : "persona" {
     llm: "<override>"           // optional — inherits global if omitted
-    reasoning: "<override>"     // optional — inherits global if omitted
+    reasoning: "<override>"     // optional — same enum, inherits global if omitted
     goal: "<one-sentence goal>"
     questions: ["q1", "q2"]     // at least one question
     executor: SomeExecutor      // optional
@@ -163,11 +176,13 @@ skill_name {
 
 **Key design decisions:**
 
-- The **Planner** is implicit — it is auto-created from the global `llm` and `reasoning` defaults.
+- The **Planner** is implicit — it is auto-created from the global `llm` default and optional `reasoning` default.
 - **Executor + Task** are merged into a single declaration using `TaskName : "persona" { ... }`.
 - **Rules** are prefixed with `do` (positive) or `dont` (negative).
 - **Skills** are bare identifier blocks — no keyword prefix required.
 - Per-executor `llm` and `reasoning` override the global defaults when specified.
+- `reasoning` maps to the OpenAI Agents SDK reasoning effort setting and is limited to `none | minimal | low | medium | high | xhigh`.
+- If `reasoning` is omitted, the runtime does not send an explicit reasoning effort to the SDK.
 - **Skills are optional** — pure LLM tasks (text conversion, Q&A, writing) need no `skills` block at all.
 
 ## Output Formats

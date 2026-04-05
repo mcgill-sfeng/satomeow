@@ -1,6 +1,9 @@
 from textx import TextXSemanticError, get_location
 
 
+ALLOWED_REASONING_EFFORTS = {"none", "minimal", "low", "medium", "high", "xhigh"}
+
+
 def validate_system(system):
     validate_rules(system.rules)
     validate_skills(system.skills)
@@ -42,15 +45,15 @@ def validate_unique_executor_names(executors):
 
 
 def validate_planner(planner):
-    check_required(planner, "reasoningStrategy")
     check_required(planner, "llm")
     check_required(planner, "persona")
+    validate_reasoning_effort(planner, "reasoningStrategy")
 
 
 def validate_executor(executor):
-    check_required(executor, "reasoningStrategy")
     check_required(executor, "llm")
     check_required(executor, "persona")
+    validate_reasoning_effort(executor, "reasoningStrategy")
 
     if executor.task:
         validate_task(executor.task)
@@ -78,6 +81,7 @@ def validate_chat_agent(chat_agent, executor_names: set):
     check_required(chat_agent, "name")
     check_required(chat_agent, "persona")
     check_required(chat_agent, "goal")
+    validate_reasoning_effort(chat_agent, "reasoningStrategy")
     if not chat_agent.questions:
         _raise_semantic(
             f"ChatModeAgent '{chat_agent.name}' must define at least one question",
@@ -138,6 +142,24 @@ def check_required(obj, field):
 
     if isinstance(value, str) and value.strip() == "":
         _raise_semantic(f"{obj.__class__.__name__}.{field} is required", obj)
+
+
+def validate_reasoning_effort(obj, field):
+    value = getattr(obj, field, None)
+    if value is None:
+        return
+    if value == "":
+        setattr(obj, field, None)
+        return
+    if isinstance(value, str) and len(value) >= 2 and value[0] == value[-1] == '"':
+        value = value[1:-1]
+        setattr(obj, field, value)
+    if value not in ALLOWED_REASONING_EFFORTS:
+        _raise_semantic(
+            f"{obj.__class__.__name__}.{field} must be one of: "
+            f"{', '.join(sorted(ALLOWED_REASONING_EFFORTS))}",
+            obj,
+        )
 
 
 def _raise_semantic(message, model_obj):

@@ -39,7 +39,7 @@ In the current textX grammar implementation, `Agent` is represented concretely a
 
 Shared conceptual fields:
 
-- `reasoningStrategy`
+- `reasoningStrategy`  // stores the DSL `reasoning` field, i.e. SDK reasoning effort
 - `llm`
 - `persona`
 - `rules`
@@ -54,7 +54,7 @@ Represents the planner agent.
 
 Attributes:
 
-- `reasoningStrategy: str`
+- `reasoningStrategy: str`  // one of: none | minimal | low | medium | high | xhigh
 - `llm: str`
 - `persona: str`
 - `rules: list[Rule]`  
@@ -68,7 +68,7 @@ Represents an executor agent.
 
 Attributes:
 
-- `reasoningStrategy: str`
+- `reasoningStrategy: str`  // one of: none | minimal | low | medium | high | xhigh
 - `llm: str`
 - `persona: str`
 - `rules: list[Rule]`  
@@ -209,5 +209,4 @@ from agent.parser import parse_model
 system = parse_model("models/example_full.agent")
 print(system.planner.persona)
 ```
-
 

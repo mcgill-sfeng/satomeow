@@ -16,6 +16,7 @@ from agent.runtime import (
     build_examples_prompt,
     build_executor_system_prompt,
     build_function_tool,
+    build_model_settings,
     build_openai_agent,
     build_output_type,
     build_planner_agent,
@@ -106,17 +107,37 @@ def test_build_examples_prompt_can_enable_dspy_style_guidance():
     assert "Treat these examples as high-signal task demonstrations." in enriched
 
 
+def test_build_model_settings_maps_reasoning_effort():
+    settings = build_model_settings("medium")
+    assert settings.reasoning is not None
+    assert settings.reasoning.effort == "medium"
+
+
+def test_build_model_settings_leaves_reasoning_unset_by_default():
+    settings = build_model_settings(None)
+    assert settings.reasoning is None
+
+
 def test_build_openai_agent_compiles_tools_and_output_type():
     system = parse_model("models/data_visualizer/data_visualizer.agent")
     executor = build_prompt_ir(system)["executors"][0]
     agent = build_openai_agent(executor, tool_executor=ShellToolExecutor(), use_dspy=False)
     assert agent.name == "DataVisualizer"
+    assert agent.model_settings.reasoning is None
     assert [tool.name for tool in agent.tools] == [
         "preparePythonEnv",
         "runPythonScript",
         "writePreprocessor",
     ]
     assert agent.output_type is not None
+
+
+def test_build_openai_agent_applies_explicit_reasoning_effort():
+    system = parse_model("models/example_full.agent")
+    executor = build_prompt_ir(system)["executors"][1]
+    agent = build_openai_agent(executor, tool_executor=ShellToolExecutor(), use_dspy=False)
+    assert agent.model_settings.reasoning is not None
+    assert agent.model_settings.reasoning.effort == "medium"
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +151,7 @@ def _make_executors_ir():
         {
             "name": "WebResearch",
             "llm": "gpt-5.4-nano",
+            "reasoning_strategy": "medium",
             "persona": "research agent",
             "rules": [],
             "task": {
@@ -145,6 +167,7 @@ def _make_executors_ir():
         {
             "name": "TextEditor",
             "llm": "gpt-5.4-nano",
+            "reasoning_strategy": "medium",
             "persona": "editor agent",
             "rules": [],
             "task": {
@@ -175,8 +198,16 @@ def test_build_planner_agent_has_handoffs_for_each_executor():
         e["name"]: build_openai_agent(e, tool_executor=ShellToolExecutor(), use_dspy=False)
         for e in executors
     }
-    planner = build_planner_agent(executors, executor_agents, hooks, planner_llm="gpt-5.4-nano")
+    planner = build_planner_agent(
+        executors,
+        executor_agents,
+        hooks,
+        planner_llm="gpt-5.4-nano",
+        planner_reasoning_effort="medium",
+    )
     assert planner.name == "Planner"
+    assert planner.model_settings.reasoning is not None
+    assert planner.model_settings.reasoning.effort == "medium"
     handoff_names = {h.tool_name for h in planner.handoffs}
     assert "transfer_to_webresearch" in handoff_names
     assert "transfer_to_texteditor" in handoff_names
@@ -246,11 +277,11 @@ def test_agent_runtime_single_executor_runs_directly(monkeypatch):
 
 def test_agent_runtime_coerces_structured_output(monkeypatch):
     system_spec = {
-        "planner": {"reasoning_strategy": "react", "llm": "gpt-5.4-nano", "persona": "planner", "rules": []},
+        "planner": {"reasoning_strategy": "medium", "llm": "gpt-5.4-nano", "persona": "planner", "rules": []},
         "executors": [
             {
                 "name": "Summarizer",
-                "reasoning_strategy": "react",
+                "reasoning_strategy": "medium",
                 "llm": "gpt-5.4-nano",
                 "persona": "summarizer",
                 "rules": [],

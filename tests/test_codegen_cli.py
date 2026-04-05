@@ -64,7 +64,7 @@ def test_cli_legacy_print_ir(capsys):
 def _write_safe_model(path: Path) -> Path:
     path.write_text(
         """llm: "gpt-5.4-nano"
-reasoning: "react"
+reasoning: "medium"
 
 Hello : "shell agent" {
     input: "Greeting request"

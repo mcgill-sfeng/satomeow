@@ -1,5 +1,4 @@
 llm: "gpt-5.4-nano"
-reasoning: "react"
 
 Composer : "agent file composer" {
     input: "A natural language message: either a question about what the system can do, or a description of an agent task to generate a .agent file for"
@@ -12,7 +11,7 @@ Composer : "agent file composer" {
         input: "I need an agent that summarizes web pages. Save it to models/agent_composer/generated/summarizer.agent"
         commands: [
             "cat grammar/agent.tx",
-            "python models/agent_composer/scripts/write_file.py --path models/agent_composer/generated/summarizer.agent --content 'llm: \"gpt-5.4-nano\"\nreasoning: \"react\"\n\nSummarize : \"web page summarizer\" {\n    input: \"A URL or block of web text to summarise\"\n    behavior: \"Fetch the page if a URL is given, extract main body text, and return a concise plain-text summary\"\n    output: string\n    skills: [fetchPage]\n    rules: [be_concise]\n}\n\ndo be_concise: \"keep summaries under 150 words\"\n\nfetchPage {\n    command: \"curl -s <url>\"\n    description: \"Fetch the raw HTML of a web page\"\n    param url: \"The URL to fetch\"\n}\n'",
+            "python models/agent_composer/scripts/write_file.py --path models/agent_composer/generated/summarizer.agent --content 'llm: \"gpt-5.4-nano\"\n\nSummarize : \"web page summarizer\" {\n    input: \"A URL or block of web text to summarise\"\n    behavior: \"Fetch the page if a URL is given, extract main body text, and return a concise plain-text summary\"\n    output: string\n    skills: [fetchPage]\n    rules: [be_concise]\n}\n\ndo be_concise: \"keep summaries under 150 words\"\n\nfetchPage {\n    command: \"curl -s <url>\"\n    description: \"Fetch the raw HTML of a web page\"\n    param url: \"The URL to fetch\"\n}\n'",
             "python -m agent.cli inspect models/agent_composer/generated/summarizer.agent --print-ir"
         ]
         output: "Agent file created and validated successfully. Path: models/agent_composer/generated/summarizer.agent"

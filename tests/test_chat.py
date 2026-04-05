@@ -44,7 +44,7 @@ def test_no_chat_model_ir_has_none():
 def test_chat_model_invalid_executor_ref(tmp_path):
     bad = tmp_path / "bad.agent"
     bad.write_text(
-        'llm: "gpt-5.4-nano"\nreasoning: "react"\n'
+        'llm: "gpt-5.4-nano"\nreasoning: "medium"\n'
         'A : "a" { input: "x" behavior: "y" }\n'
         'chat C : "c" { goal: "g" questions: ["q?"] executor: NoSuchExecutor }\n',
         encoding="utf-8",
@@ -58,7 +58,7 @@ def test_chat_agent_requires_at_least_one_question(tmp_path):
     # The grammar (+=) rejects an empty list at parse time.
     bad = tmp_path / "bad.agent"
     bad.write_text(
-        'llm: "gpt-5.4-nano"\nreasoning: "react"\n'
+        'llm: "gpt-5.4-nano"\nreasoning: "medium"\n'
         'A : "a" { input: "x" behavior: "y" }\n'
         'chat C : "c" { goal: "g" questions: [] }\n',
         encoding="utf-8",

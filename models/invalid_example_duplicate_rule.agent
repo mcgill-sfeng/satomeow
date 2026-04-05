@@ -1,5 +1,4 @@
 llm: "gpt-5.4-nano"
-reasoning: "chain-of-thought"
 
 Summarize : "text summarizer" {
     input: "A long document"
