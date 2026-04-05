@@ -129,6 +129,25 @@ Important note:
 - Without a compiled sidecar, `--dspy` only adds lightweight guidance text around the original examples
 - For tool-heavy tasks like `data_visualizer`, the current DSPy path is experimental and should be validated by inspecting the composed prompt
 
+7. Experimental: dump the composed SDK-bound prompt payload:
+
+```bash
+python -m agent.cli prompt models/data_visualizer/data_visualizer.agent \
+  "Visualize the aligned monthly sales data in models/data_visualizer/data/aligned_sales.json"
+```
+
+8. Experimental/TODO: generate a portable bundle:
+
+```bash
+python -m agent.cli portable models/data_visualizer/data_visualizer.agent --output /tmp/data_visualizer_portable
+```
+
+Known limitation:
+
+- The portable bundle does not yet copy repo-relative assets, scripts, or data referenced by DSL skills
+- Hard-coded paths inside skill commands are not rewritten
+- `portable` should currently be treated as a scaffold/export aid, not as a fully working deployment target
+
 ## DSL Syntax
 
 For the full language reference, see **[DSL_REFERENCE.md](DSL_REFERENCE.md)**.
@@ -261,9 +280,11 @@ This repository includes the frontend compiler stages plus a code-generated runt
 - `agent/runtime.py` maps executors to `openai-agents-python` agents, compiles DSL skills into SDK function tools, and
   compiles structured output schemas into Pydantic output models
 - The OpenAI Agents SDK owns the model/tool loop at runtime
+- `python -m agent.cli prompt ...` prints the composed payload that would be sent to the SDK
 - `python -m agent.cli compile ...` writes a `*.compiled.json` sidecar with DSPy-compiled demonstrations
 - `--dspy` loads that sidecar when present and swaps the executor prompt examples to the compiled demonstrations
 - Without a sidecar, `--dspy` is only a light prompt-phrasing change and should not be treated as a proven quality gain
+- `python -m agent.cli portable ...` is currently experimental because asset bundling/path rewriting is not implemented yet
 
 ### 8. CLI Interface
 
@@ -271,6 +292,7 @@ This repository includes the frontend compiler stages plus a code-generated runt
 python -m agent.cli inspect models/example_full.agent --print-ir
 python -m agent.cli generate models/example_full.agent --output generated_agent.py
 python -m agent.cli run models/example_full.agent "Compare the REST and GraphQL APIs of GitHub"
+python -m agent.cli prompt models/example_full.agent --planner "Compare the REST and GraphQL APIs of GitHub"
 python -m agent.cli compile models/data_visualizer/data_visualizer.agent --model openai/gpt-5.4-nano
 python -m agent.cli run models/example_full.agent --dspy "Compare the REST and GraphQL APIs of GitHub"
 ```

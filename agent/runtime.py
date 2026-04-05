@@ -339,6 +339,60 @@ class AgentSystemRuntime:
                 return executor
         raise KeyError(f"Unknown executor name: {executor_name}")
 
+    def build_prompt_dump(
+        self,
+        user_input: str,
+        *,
+        executor_name: str | None = None,
+        planner: bool = False,
+    ) -> dict[str, Any]:
+        executors = self.system_spec["executors"]
+        if planner:
+            if len(executors) == 1:
+                raise ValueError("Planner prompt is unavailable for single-executor systems.")
+            planner_spec = self.system_spec.get("planner", {})
+            return {
+                "mode": "planner",
+                "agent_name": "Planner",
+                "model": planner_spec.get("llm") or executors[0]["llm"],
+                "reasoning_effort": planner_spec.get("reasoning_strategy"),
+                "model_settings": _model_settings_payload(planner_spec.get("reasoning_strategy")),
+                "system_prompt": build_planner_prompt(executors),
+                "input": user_input,
+                "handoffs": [executor["name"] for executor in executors],
+            }
+
+        if executor_name is None:
+            if len(executors) != 1:
+                raise ValueError(
+                    "Multi-executor systems require --executor NAME or --planner when dumping prompts."
+                )
+            executor = executors[0]
+        else:
+            executor = self._find_executor(executor_name)
+
+        compiled_examples = None
+        if self._compiled_sidecar is not None:
+            from agent.dspy_compile import get_compiled_examples
+            compiled_examples = get_compiled_examples(self._compiled_sidecar, executor["name"])
+
+        return {
+            "mode": "executor",
+            "agent_name": executor["name"],
+            "model": executor["llm"],
+            "reasoning_effort": executor.get("reasoning_strategy"),
+            "model_settings": _model_settings_payload(executor.get("reasoning_strategy")),
+            "system_prompt": build_executor_system_prompt(
+                executor,
+                use_dspy=self.use_dspy,
+                compiled_examples=compiled_examples,
+            ),
+            "input": user_input,
+            "tools": executor["task"]["skills"],
+            "output_format": executor["task"]["output_format"],
+            "output_fields": executor["task"]["output_fields"],
+        }
+
 
 # ---------------------------------------------------------------------------
 # Agent / prompt builders
@@ -365,6 +419,11 @@ def build_model_settings(reasoning_effort: str | None) -> ModelSettings:
     if reasoning_effort is None:
         return ModelSettings()
     return ModelSettings(reasoning=Reasoning(effort=reasoning_effort))
+
+
+def _model_settings_payload(reasoning_effort: str | None) -> dict[str, Any]:
+    settings = build_model_settings(reasoning_effort)
+    return settings.to_json_dict()
 
 
 def build_executor_system_prompt(

@@ -127,7 +127,8 @@ def test_chat_quit_during_questions(monkeypatch, capsys):
     monkeypatch.setattr("builtins.input", lambda _: next(inputs))
 
     cli.main(["chat", CHAT_MODEL])
-    # Should exit cleanly without calling LLM
+    out = capsys.readouterr().out
+    assert "____         _          __  __" in out
 
 
 def test_chat_ctrl_d_during_questions(monkeypatch, capsys):

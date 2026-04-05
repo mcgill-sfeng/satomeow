@@ -1,3 +1,8 @@
+import os
+import stat
+import subprocess
+import sys
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -19,6 +24,44 @@ def test_cli_generate_writes_module(tmp_path, capsys):
     assert "run_agent" in output_path.read_text(encoding="utf-8")
     captured = capsys.readouterr()
     assert str(output_path) in captured.out
+
+
+def test_cli_portable_writes_bundle(tmp_path, capsys):
+    output_dir = tmp_path / "portable-agent"
+    cli.main(["portable", "models/example_full.agent", "--output", str(output_dir)])
+    assert (output_dir / "main.py").exists()
+    assert (output_dir / "agent.sh").exists()
+    assert (output_dir / "model.agent").exists()
+    assert (output_dir / "PORTABLE_TODO.md").exists()
+    assert (output_dir / "lib" / "agent" / "runtime.py").exists()
+    captured = capsys.readouterr()
+    assert "portable is experimental/TODO" in captured.out
+    assert str(output_dir) in captured.out
+
+
+def test_cli_portable_help_runs_without_site_packages(tmp_path):
+    output_dir = tmp_path / "portable-agent"
+    cli.main(["portable", "models/example_full.agent", "--output", str(output_dir)])
+
+    wrapper = tmp_path / "python-no-site.sh"
+    wrapper.write_text(
+        "#!/usr/bin/env sh\n"
+        f"exec {sys.executable} -S \"$@\"\n",
+        encoding="utf-8",
+    )
+    wrapper.chmod(wrapper.stat().st_mode | stat.S_IXUSR)
+
+    env = {"PATH": os.environ.get("PATH", ""), "PYTHON": str(wrapper)}
+    completed = subprocess.run(
+        [str(output_dir / "agent.sh"), "-h"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    )
+    assert "Run the portable agent bundle." in completed.stdout
 
 
 def test_cli_run_uses_sdk_runtime(tmp_path, monkeypatch, capsys):
@@ -53,6 +96,32 @@ def test_cli_verbose_prints_composed_prompt(tmp_path, monkeypatch, capsys):
     assert "[system_prompt]" in captured.out
     assert "[user_input]" in captured.out
     assert "Say hello" in captured.out
+
+
+def test_cli_prompt_dump_prints_executor_payload(capsys):
+    cli.main(["prompt", "models/data_visualizer/data_visualizer.agent", "Say hello"])
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["mode"] == "executor"
+    assert payload["agent_name"] == "DataVisualizer"
+    assert payload["input"] == "Say hello"
+    assert "system_prompt" in payload
+
+
+def test_cli_prompt_dump_prints_planner_payload(capsys):
+    cli.main(["prompt", "models/example_full.agent", "--planner", "Compare APIs"])
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["mode"] == "planner"
+    assert payload["agent_name"] == "Planner"
+    assert payload["input"] == "Compare APIs"
+
+
+def test_cli_prompt_dump_requires_selector_for_multi_executor():
+    try:
+        cli.main(["prompt", "models/example_full.agent", "Compare APIs"])
+    except SystemExit as exc:
+        assert "require --executor NAME or --planner" in str(exc)
+    else:
+        raise AssertionError("expected SystemExit for ambiguous multi-executor prompt dump")
 
 
 def test_cli_legacy_print_ir(capsys):

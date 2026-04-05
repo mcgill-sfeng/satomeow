@@ -6,7 +6,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from agent.codegen import generate_agent_module
+from agent.codegen import generate_agent_module, generate_portable_agent_bundle
 from agent.ir import build_prompt_ir
 from agent.parser import parse_model
 
@@ -60,6 +60,19 @@ def _build_parser():
     )
     generate_parser.set_defaults(func=_run_generate)
 
+    portable_parser = subparsers.add_parser(
+        "portable",
+        help="Generate an experimental portable bundle directory with an agent.sh entrypoint",
+    )
+    _add_model_argument(portable_parser)
+    portable_parser.add_argument(
+        "-o",
+        "--output",
+        required=True,
+        help="Output directory for the portable bundle",
+    )
+    portable_parser.set_defaults(func=_run_portable)
+
     compile_parser = subparsers.add_parser(
         "compile",
         help="Run DSPy BootstrapFewShot on a .agent model and save optimised examples to a sidecar",
@@ -98,6 +111,28 @@ def _build_parser():
         help="Use the compile-time DSPy-style example prompt enrichment path",
     )
     run_parser.set_defaults(func=_run_generated_agent)
+
+    prompt_parser = subparsers.add_parser(
+        "prompt",
+        help="Print the SDK prompt payload that would be sent for a given input",
+    )
+    _add_model_argument(prompt_parser)
+    prompt_parser.add_argument("prompt", help="User input to compose against the model")
+    prompt_parser.add_argument(
+        "--executor",
+        help="Executor name to target when the model has multiple executors",
+    )
+    prompt_parser.add_argument(
+        "--planner",
+        action="store_true",
+        help="Dump the planner prompt instead of an executor prompt",
+    )
+    prompt_parser.add_argument(
+        "--dspy",
+        action="store_true",
+        help="Use compiled DSPy examples if available when composing the prompt",
+    )
+    prompt_parser.set_defaults(func=_run_prompt_dump)
 
     chat_parser = subparsers.add_parser(
         "chat",
@@ -173,7 +208,7 @@ def _run_compile(args):
 
 
 def _looks_like_legacy_invocation(argv: list[str]) -> bool:
-    return bool(argv) and argv[0] not in {"inspect", "generate", "run", "chat", "compile"}
+    return bool(argv) and argv[0] not in {"inspect", "generate", "portable", "run", "chat", "compile", "prompt"}
 
 
 def _run_inspect(args):
@@ -198,6 +233,40 @@ def _run_inspect(args):
 def _run_generate(args):
     output_path = generate_agent_module(args.model_path, args.output)
     print(output_path)
+
+
+def _run_portable(args):
+    output_path = generate_portable_agent_bundle(args.model_path, args.output)
+    print(
+        "[warning] portable is experimental/TODO: repo-relative assets and hard-coded skill paths are not bundled yet.",
+        flush=True,
+    )
+    print(output_path)
+
+
+def _run_prompt_dump(args):
+    from agent.ir import build_prompt_ir
+    from agent.parser import parse_model
+    from agent.runtime import AgentSystemRuntime
+
+    system = parse_model(args.model_path)
+    prompt_ir = build_prompt_ir(system)
+    runtime = AgentSystemRuntime(
+        prompt_ir,
+        source_model_path=args.model_path,
+        use_dspy=args.dspy,
+    )
+
+    try:
+        payload = runtime.build_prompt_dump(
+            args.prompt,
+            executor_name=args.executor,
+            planner=args.planner,
+        )
+    except (KeyError, ValueError) as exc:
+        raise SystemExit(str(exc)) from exc
+
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
 
 
 def _run_generated_agent(args):
@@ -290,6 +359,8 @@ def _run_chat(args):
     goal = chat_agent["goal"]
     executor_ref = chat_agent.get("executor_ref")
 
+    _print_logo_v2()
+
     # Banner
     print("─" * 60, flush=True)
     print(f"  {chat_agent['name']} ({chat_agent['persona']})", flush=True)
@@ -363,6 +434,14 @@ def _run_chat(args):
         print(json.dumps(result.output, indent=2), flush=True)
     else:
         print(result.output, flush=True)
+
+
+def _print_logo_v2():
+    logo_path = Path(__file__).resolve().parent.parent / "logo-v2.txt"
+    if not logo_path.exists():
+        return
+    print(logo_path.read_text(encoding="utf-8").rstrip(), flush=True)
+    print(flush=True)
 
 
 def _load_generated_module(module_path: Path):
