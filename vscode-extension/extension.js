@@ -157,9 +157,12 @@ function safeParseJson(raw) {
 
 function resolvePython(workspaceRoot) {
   const candidates = [
-    path.join(workspaceRoot, ".venv", "Scripts", "python.exe"), // Windows
-    path.join(workspaceRoot, ".venv", "bin", "python"), // macOS/Linux
+    path.join(workspaceRoot, ".venv", "Scripts", "python.exe"), // Windows (.venv)
+    path.join(workspaceRoot, "venv", "Scripts", "python.exe"),  // Windows (venv)
+    path.join(workspaceRoot, ".venv", "bin", "python"),         // macOS/Linux (.venv)
     path.join(workspaceRoot, ".venv", "bin", "python3"),
+    path.join(workspaceRoot, "venv", "bin", "python"),          // macOS/Linux (venv)
+    path.join(workspaceRoot, "venv", "bin", "python3"),
   ];
 
   for (const candidate of candidates) {
