@@ -1,0 +1,47 @@
+{
+  "executors": [
+    {
+      "name": "Summarize",
+      "output_type_json_schema": null,
+      "prompt_dump": {
+        "agent_name": "Summarize",
+        "input": "snapshot input",
+        "mode": "executor",
+        "model": "gpt-5.4-nano",
+        "model_settings": {
+          "extra_args": null,
+          "extra_body": null,
+          "extra_headers": null,
+          "extra_query": null,
+          "frequency_penalty": null,
+          "include_usage": null,
+          "max_tokens": null,
+          "metadata": null,
+          "parallel_tool_calls": null,
+          "presence_penalty": null,
+          "prompt_cache_retention": null,
+          "reasoning": null,
+          "response_include": null,
+          "retry": null,
+          "store": null,
+          "temperature": null,
+          "tool_choice": null,
+          "top_logprobs": null,
+          "top_p": null,
+          "truncation": null,
+          "verbosity": null
+        },
+        "output_fields": [],
+        "output_format": "string",
+        "reasoning_effort": null,
+        "system_prompt": "You are text summarizer.\nTask: Summarize\nBehavior: Summarize the document concisely\nRules:\nNone\n\nAvailable tools:\nNone\n\nOutput contract: Return plain text.\n\nExecution guidance:\n1. Use the provided tools instead of inventing shell transcripts.\n2. When state is uncertain, inspect first. Check what exists and what is needed before running mutating or expensive commands.\n3. Use tool outputs to decide the next step.\n4. Only return success after the required artifacts are actually created.\n5. If work cannot proceed safely, return the structured failure explanation instead of inventing outputs.\nExamples:\nInput: Neural networks are computational models inspired by the human brain. They consist of layers of interconnected nodes that learn patterns from data through a process called backpropagation. Deep learning extends this by stacking many layers, enabling recognition of complex features in images, text, and audio.\nCommand trajectory: no commands\nFinal output: Neural networks are brain-inspired models that learn from data via backpropagation; deep learning stacks many layers to handle complex tasks like vision and speech.",
+        "tools": []
+      },
+      "system_prompt": "You are text summarizer.\nTask: Summarize\nBehavior: Summarize the document concisely\nRules:\nNone\n\nAvailable tools:\nNone\n\nOutput contract: Return plain text.\n\nExecution guidance:\n1. Use the provided tools instead of inventing shell transcripts.\n2. When state is uncertain, inspect first. Check what exists and what is needed before running mutating or expensive commands.\n3. Use tool outputs to decide the next step.\n4. Only return success after the required artifacts are actually created.\n5. If work cannot proceed safely, return the structured failure explanation instead of inventing outputs.\nExamples:\nInput: Neural networks are computational models inspired by the human brain. They consist of layers of interconnected nodes that learn patterns from data through a process called backpropagation. Deep learning extends this by stacking many layers, enabling recognition of complex features in images, text, and audio.\nCommand trajectory: no commands\nFinal output: Neural networks are brain-inspired models that learn from data via backpropagation; deep learning stacks many layers to handle complex tasks like vision and speech.",
+      "tools": []
+    }
+  ],
+  "model_path": "models/example_minimal.agent",
+  "planner_prompt": null,
+  "planner_prompt_dump": null
+}

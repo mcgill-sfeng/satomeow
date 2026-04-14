@@ -1,4 +1,4 @@
-def build_prompt_ir(system) -> dict:
+def serialize_system_to_dict(system) -> dict:
     """
     Convert textX model into a Jinja2-friendly dictionary IR.
     """
@@ -77,8 +77,8 @@ def build_prompt_ir(system) -> dict:
 
     # ---- Chat agent ----
     chat_agent_ir = None
-    if system.chat_agent is not None:
-        ca = system.chat_agent
+    if system.chatAgent is not None:
+        ca = system.chatAgent
         chat_agent_ir = {
             "name": ca.name,
             "persona": ca.persona,
@@ -95,7 +95,12 @@ def build_prompt_ir(system) -> dict:
         "executors": executors,
         "rules": [global_rules[rule.name] for rule in system.rules],
         "skills": [global_skills[skill.name] for skill in system.skills],
-        "chat_agent": chat_agent_ir,
+        "chatAgent": chat_agent_ir,
     }
 
     return system_ir
+
+
+def build_prompt_ir(system) -> dict:
+    """Backward-compatible alias for serialization used by inspect/debug paths."""
+    return serialize_system_to_dict(system)

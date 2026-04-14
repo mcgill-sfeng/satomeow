@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, get_args, get_origin
+from typing import Any
+
+from agent.metamodel import OutputSpec
 
 _SCALAR_TYPES = {
     "str": str,
@@ -52,28 +54,28 @@ class OutputSchemaSpec:
         return f"{self.format} {{ {parts} }}"
 
 
-def parse_output_schema(
-    output_format: str | None = None,
-    output_fields: list[dict[str, str]] | None = None,
-) -> OutputSchemaSpec:
-    """Build an OutputSchemaSpec from the IR's output_format and output_fields.
+def parse_output_schema(output_spec: OutputSpec | str | None = None) -> OutputSchemaSpec:
+    """Build an OutputSchemaSpec from a metamodel OutputSpec.
 
-    Also accepts a bare legacy string (e.g. ``"status: str, message: str"``) as
-    the first argument for backwards-compatibility with tests and generated
-    modules that pass the old single-string form.
+    Also accepts a bare legacy string (e.g. ``"status: str, message: str"``)
+    for backwards-compatibility with tests and DSPy utilities.
     """
-    fmt = (output_format or "string").strip().lower()
+    if output_spec is None:
+        return OutputSchemaSpec(format="string", fields=())
 
-    # --- Legacy: single comma-separated string like "status: str, message: str" ---
-    if ":" in fmt and fmt not in _STRUCTURED_FORMATS and fmt not in _TEXT_FORMATS:
-        return _parse_legacy_string(output_format or "string")
+    if isinstance(output_spec, str):
+        fmt = output_spec.strip().lower()
+        if ":" in fmt and fmt not in _STRUCTURED_FORMATS and fmt not in _TEXT_FORMATS:
+            return _parse_legacy_string(output_spec)
+        return OutputSchemaSpec(format=fmt, fields=())
 
+    fmt = (output_spec.format or "string").strip().lower()
     fields: list[OutputFieldSpec] = []
-    for item in output_fields or []:
-        name = item.get("name", "").strip()
-        type_name = item.get("type", "str").strip().lower()
+    for field in output_spec.fields or []:
+        name = (field.name or "").strip()
+        type_name = (field.type or "str").strip().lower()
         if name:
-            _python_type_for_name(type_name)  # validate
+            _python_type_for_name(type_name)
             fields.append(OutputFieldSpec(name=name, type_name=type_name))
 
     return OutputSchemaSpec(format=fmt, fields=tuple(fields))
@@ -167,7 +169,7 @@ def _parse_text_format(payload: Any, fmt: str) -> Any:
             import tomllib  # Python 3.11+
         except ImportError:
             try:
-                import tomli as tomllib  # type: ignore[no-redef]
+                import tomli as tomllib  # type: ignore[import-not-found,no-redef]
             except ImportError as exc:
                 raise ImportError("Install 'tomli' for TOML output validation on Python < 3.11") from exc
         return tomllib.loads(payload)
@@ -186,11 +188,11 @@ def build_dspy_signature_class(schema_text: str, class_name: str = "GeneratedSig
         return None
 
     try:
-        import dspy
+        import dspy  # type: ignore[import-untyped]
     except ImportError as exc:
         raise RuntimeError("dspy is not installed. Install dspy to build structured signatures.") from exc
 
-    annotations = {}
+    annotations: dict[str, type[Any]] = {}
     namespace = {"__annotations__": annotations}
 
     for field in schema.fields:
@@ -201,13 +203,16 @@ def build_dspy_signature_class(schema_text: str, class_name: str = "GeneratedSig
 
 
 def _coerce_value(value: Any, type_name: str) -> Any:
-    target_type = _python_type_for_name(type_name)
-    origin = get_origin(target_type)
-    if origin is list:
+    list_match = _LIST_TYPE_RE.match(type_name)
+    if list_match:
         if not isinstance(value, list):
             raise TypeError(f"Expected list for type {type_name}, got {type(value).__name__}")
-        inner_type = get_args(target_type)[0]
+        inner_name = list_match.group("inner")
+        inner_type = _SCALAR_TYPES.get(inner_name)
+        if inner_type is None:
+            raise ValueError(f"Unsupported output schema type: {type_name}")
         return [_coerce_scalar(item, inner_type) for item in value]
+    target_type = _python_type_for_name(type_name)
     return _coerce_scalar(value, target_type)
 
 
@@ -231,10 +236,6 @@ def _python_type_for_name(type_name: str) -> type:
 
     list_match = _LIST_TYPE_RE.match(type_name)
     if list_match:
-        inner_name = list_match.group("inner")
-        inner_type = _SCALAR_TYPES.get(inner_name)
-        if inner_type is None:
-            raise ValueError(f"Unsupported output schema type: {type_name}")
-        return list[inner_type]
+        return list
 
     raise ValueError(f"Unsupported output schema type: {type_name}")

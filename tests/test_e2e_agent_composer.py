@@ -65,10 +65,13 @@ def _inspect_agent(path: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Composer write_file skill uses POSIX-style shell quoting.")
 def test_e2e_agent_composer_creates_new_agent_file(tmp_path):
-    target = tmp_path / "summarizer.agent"
+    target = PROJECT_ROOT / "models" / "agent_composer" / "generated" / "e2e_summarizer.agent"
+    target.unlink(missing_ok=True)
 
-    result = _run_cli_json(f"I need an agent that summarizes web pages. Save it to {target}")
+    target_path = str(target).replace("\\", "/")
+    result = _run_cli_json(f"I need an agent that summarizes web pages. Save it to {target_path}")
 
     assert target.exists()
     text = target.read_text(encoding="utf-8")
@@ -89,10 +92,11 @@ def test_e2e_agent_composer_routes_to_validator_for_existing_agent():
 
 
 def test_e2e_agent_composer_routes_to_validator_for_invalid_agent(tmp_path):
-    target = tmp_path / "bad.agent"
+    target = PROJECT_ROOT / "models" / "agent_composer" / "generated" / "e2e_bad.agent"
+    target.unlink(missing_ok=True)
     target.write_text("this is not valid DSL", encoding="utf-8")
 
-    result = _run_cli_json(f"Validate {target}")
+    result = _run_cli_json(f"Validate {str(target).replace('\\', '/')}")
 
     assert result["executor_name"] == "Validator"
     assert result["output"]["valid"] is False

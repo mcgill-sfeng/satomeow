@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from agent import cli
 from agent.codegen import render_agent_module
 
@@ -14,7 +16,8 @@ def test_render_agent_module_contains_runtime_entrypoints():
     rendered = render_agent_module("models/example_full.agent")
     assert "def build_runtime" in rendered
     assert "def run_agent" in rendered
-    assert "SYSTEM_SPEC_JSON" in rendered
+    assert "planner.llm =" in rendered
+    assert "def _build_system" in rendered
 
 
 def test_cli_generate_writes_module(tmp_path, capsys):
@@ -39,6 +42,7 @@ def test_cli_portable_writes_bundle(tmp_path, capsys):
     assert str(output_dir) in captured.out
 
 
+@pytest.mark.skipif(os.name == "nt", reason="portable agent.sh execution test is POSIX-only")
 def test_cli_portable_help_runs_without_site_packages(tmp_path):
     output_dir = tmp_path / "portable-agent"
     cli.main(["portable", "models/example_full.agent", "--output", str(output_dir)])

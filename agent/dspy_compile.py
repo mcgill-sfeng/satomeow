@@ -20,13 +20,15 @@ import json
 from pathlib import Path
 from typing import Any
 
+from agent.metamodel import Executor, System
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
 
 def compile_system_spec(
-    system_spec: dict[str, Any],
+    system: System,
     source_path: str | Path,
     *,
     lm=None,
@@ -34,7 +36,7 @@ def compile_system_spec(
     """Run DSPy BootstrapFewShot on executors that have examples.
 
     Args:
-        system_spec: Prompt IR dict (output of ``build_prompt_ir``).
+        system: Parsed and validated metamodel system.
         source_path: Path to the source ``.agent`` file.  The sidecar is
                      written alongside it as ``<path>.compiled.json``.
         lm: Optional DSPy LM instance.  If ``None``, the currently configured
@@ -54,11 +56,11 @@ def compile_system_spec(
 
     compiled: dict[str, Any] = {"executors": {}}
 
-    for executor in system_spec["executors"]:
-        examples = executor["task"].get("examples", [])
+    for executor in system.executors:
+        examples = executor.task.examples
         if not examples:
             continue
-        name = executor["name"]
+        name = executor.task.name
         compiled["executors"][name] = _compile_executor(executor, examples, dspy)
 
     sidecar = _sidecar_path(source_path)
@@ -77,7 +79,7 @@ def load_compiled_sidecar(source_path: str | Path) -> dict[str, Any] | None:
         return None
     try:
         return json.loads(sidecar.read_text(encoding="utf-8"))
-    except json.JSONDecodeError, OSError:
+    except (json.JSONDecodeError, OSError):
         return None
 
 
@@ -117,8 +119,8 @@ def _require_dspy():
 
 
 def _compile_executor(
-    executor: dict[str, Any],
-    examples: list[dict[str, Any]],
+    executor: Executor,
+    examples: list[Any],
     dspy,
 ) -> dict[str, Any]:
     """Compile a single executor's examples with DSPy BootstrapFewShot.
@@ -126,15 +128,15 @@ def _compile_executor(
     Falls back to the original examples verbatim if compilation fails (e.g.
     no LM configured, metric always false, or API error).
     """
-    input_desc = executor["task"].get("input_description", "user input")
-    behavior = executor["task"].get("behavior", "")
+    input_desc = executor.task.inputDescription or "user input"
+    behavior = executor.task.behavior or ""
 
     try:
         return _run_bootstrap(input_desc, behavior, examples, dspy)
     except Exception as exc:
         # Graceful fallback — original examples preserved as-is.
         return {
-            "compiled_examples": [{"input": ex["input"], "output": ex["output"]} for ex in examples],
+            "compiled_examples": [{"input": ex.input, "output": ex.output} for ex in examples],
             "bootstrap_error": str(exc),
         }
 
@@ -142,7 +144,7 @@ def _compile_executor(
 def _run_bootstrap(
     input_desc: str,
     behavior: str,
-    examples: list[dict[str, Any]],
+    examples: list[Any],
     dspy,
 ) -> dict[str, Any]:
     """Inner function that actually runs DSPy BootstrapFewShot."""
@@ -158,8 +160,8 @@ def _run_bootstrap(
 
     trainset = [
         dspy.Example(
-            task_input=ex["input"],
-            task_output=ex["output"],
+            task_input=ex.input,
+            task_output=ex.output,
         ).with_inputs("task_input")
         for ex in examples
     ]
@@ -186,6 +188,6 @@ def _run_bootstrap(
 
     # If bootstrap produced nothing, fall back to the raw examples.
     if not demos:
-        demos = [{"input": ex["input"], "output": ex["output"]} for ex in examples]
+        demos = [{"input": ex.input, "output": ex.output} for ex in examples]
 
     return {"compiled_examples": demos}

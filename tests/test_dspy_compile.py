@@ -9,7 +9,6 @@ from agent.dspy_compile import (
     load_compiled_sidecar,
     compile_system_spec,
 )
-from agent.ir import build_prompt_ir
 from agent.parser import parse_model
 from agent.runtime import AgentSystemRuntime, build_examples_prompt
 
@@ -82,7 +81,7 @@ def test_get_compiled_examples_returns_list():
 
 
 def test_compile_system_spec_writes_sidecar(tmp_path):
-    ir = build_prompt_ir(parse_model(MODEL_PATH))
+    system = parse_model(MODEL_PATH)
 
     mock_dspy = MagicMock()
     # Make BootstrapFewShot.compile return a module with named_predictors
@@ -105,7 +104,7 @@ def test_compile_system_spec_writes_sidecar(tmp_path):
     source.touch()
 
     with patch("agent.dspy_compile._require_dspy", return_value=mock_dspy):
-        sidecar_path = compile_system_spec(ir, source)
+        sidecar_path = compile_system_spec(system, source)
 
     assert sidecar_path.exists()
     data = json.loads(sidecar_path.read_text())
@@ -117,20 +116,20 @@ def test_compile_system_spec_skips_executors_without_examples(tmp_path):
     from agent.parser import parse_model_text
 
     text = 'llm: "gpt-5.4-nano"\nreasoning: "medium"\n' 'A : "a" { input: "x" behavior: "y" }\n'
-    ir = build_prompt_ir(parse_model_text(text))
+    system = parse_model_text(text)
     source = tmp_path / "no_examples.agent"
     source.touch()
 
     mock_dspy = MagicMock()
     with patch("agent.dspy_compile._require_dspy", return_value=mock_dspy):
-        sidecar_path = compile_system_spec(ir, source)
+        sidecar_path = compile_system_spec(system, source)
 
     data = json.loads(sidecar_path.read_text())
     assert data["executors"] == {}
 
 
 def test_compile_system_spec_fallback_on_error(tmp_path):
-    ir = build_prompt_ir(parse_model(MODEL_PATH))
+    system = parse_model(MODEL_PATH)
     source = tmp_path / "test.agent"
     source.touch()
 
@@ -140,7 +139,7 @@ def test_compile_system_spec_fallback_on_error(tmp_path):
     mock_dspy.Example.side_effect = lambda **kw: SimpleNamespace(**kw, with_inputs=lambda *a: SimpleNamespace(**kw))
 
     with patch("agent.dspy_compile._require_dspy", return_value=mock_dspy):
-        sidecar_path = compile_system_spec(ir, source)
+        sidecar_path = compile_system_spec(system, source)
 
     data = json.loads(sidecar_path.read_text())
     # Fallback: original examples preserved, error noted
@@ -155,8 +154,8 @@ def test_compile_system_spec_fallback_on_error(tmp_path):
 
 
 def test_build_examples_prompt_uses_compiled_when_provided():
-    ir = build_prompt_ir(parse_model(MODEL_PATH))
-    executor = next(e for e in ir["executors"] if e["name"] == "WebResearch")
+    system = parse_model(MODEL_PATH)
+    executor = next(e for e in system.executors if e.task.name == "WebResearch")
 
     compiled = [{"input": "compiled q", "output": "compiled a"}]
     prompt = build_examples_prompt(executor, use_dspy=True, compiled_examples=compiled)
@@ -167,8 +166,8 @@ def test_build_examples_prompt_uses_compiled_when_provided():
 
 
 def test_build_examples_prompt_ignores_compiled_when_none():
-    ir = build_prompt_ir(parse_model(MODEL_PATH))
-    executor = next(e for e in ir["executors"] if e["name"] == "WebResearch")
+    system = parse_model(MODEL_PATH)
+    executor = next(e for e in system.executors if e.task.name == "WebResearch")
 
     prompt = build_examples_prompt(executor, use_dspy=False, compiled_examples=None)
     assert "DSPy-compiled" not in prompt
@@ -186,8 +185,8 @@ def test_runtime_loads_sidecar_on_use_dspy(tmp_path, monkeypatch):
     compiled_data = {"executors": {"WebResearch": {"compiled_examples": [{"input": "ci", "output": "co"}]}}}
     sidecar.write_text(json.dumps(compiled_data), encoding="utf-8")
 
-    ir = build_prompt_ir(parse_model(MODEL_PATH))
-    runtime = AgentSystemRuntime(ir, source_model_path=str(model_path), use_dspy=True)
+    system = parse_model(MODEL_PATH)
+    runtime = AgentSystemRuntime(system, source_model_path=str(model_path), use_dspy=True)
 
     assert runtime._compiled_sidecar == compiled_data
 
@@ -198,8 +197,8 @@ def test_runtime_sidecar_is_none_without_use_dspy(tmp_path):
     sidecar = tmp_path / "test.agent.compiled.json"
     sidecar.write_text('{"executors": {}}', encoding="utf-8")
 
-    ir = build_prompt_ir(parse_model(MODEL_PATH))
-    runtime = AgentSystemRuntime(ir, source_model_path=str(model_path), use_dspy=False)
+    system = parse_model(MODEL_PATH)
+    runtime = AgentSystemRuntime(system, source_model_path=str(model_path), use_dspy=False)
     assert runtime._compiled_sidecar is None
 
 

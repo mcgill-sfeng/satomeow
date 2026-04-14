@@ -1,0 +1,246 @@
+{
+  "executors": [
+    {
+      "name": "DataVisualizer",
+      "output_type_json_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_path": {
+            "description": "artifact path",
+            "title": "Artifact Path",
+            "type": "string"
+          },
+          "message": {
+            "description": "message",
+            "title": "Message",
+            "type": "string"
+          },
+          "preprocessed_data_path": {
+            "description": "preprocessed data path",
+            "title": "Preprocessed Data Path",
+            "type": "string"
+          },
+          "preprocessor_script_path": {
+            "description": "preprocessor script path",
+            "title": "Preprocessor Script Path",
+            "type": "string"
+          },
+          "status": {
+            "description": "status",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "message",
+          "artifact_path",
+          "preprocessed_data_path",
+          "preprocessor_script_path"
+        ],
+        "title": "DataVisualizerOutput",
+        "type": "object"
+      },
+      "prompt_dump": {
+        "agent_name": "DataVisualizer",
+        "input": "snapshot input",
+        "mode": "executor",
+        "model": "gpt-5.4-nano",
+        "model_settings": {
+          "extra_args": null,
+          "extra_body": null,
+          "extra_headers": null,
+          "extra_query": null,
+          "frequency_penalty": null,
+          "include_usage": null,
+          "max_tokens": null,
+          "metadata": null,
+          "parallel_tool_calls": null,
+          "presence_penalty": null,
+          "prompt_cache_retention": null,
+          "reasoning": null,
+          "response_include": null,
+          "retry": null,
+          "store": null,
+          "temperature": null,
+          "tool_choice": null,
+          "top_logprobs": null,
+          "top_p": null,
+          "truncation": null,
+          "verbosity": null
+        },
+        "output_fields": [
+          {
+            "name": "status",
+            "type": "str"
+          },
+          {
+            "name": "message",
+            "type": "str"
+          },
+          {
+            "name": "artifact_path",
+            "type": "str"
+          },
+          {
+            "name": "preprocessed_data_path",
+            "type": "str"
+          },
+          {
+            "name": "preprocessor_script_path",
+            "type": "str"
+          }
+        ],
+        "output_format": "json",
+        "reasoning_effort": null,
+        "system_prompt": "You are data visualization agent.\nTask: DataVisualizer\nBehavior: Ensure a local Python environment exists, run the visualization script on aligned data, write and run a preprocessing script when conversion is straightforward, and otherwise return a structured explanation.\nRules:\n- DO: leave the original input files unchanged\n- DO: return a structured explanation when visualization cannot proceed safely\n\nAvailable tools:\n- preparePythonEnv: Create or activate the demo Python environment using the provided requirements.txt (args: demo_root)\n- runPythonScript: Run an existing Python script with input and output paths (args: python_bin, script_path, input_path, output_path)\n- writePreprocessor: Write a new preprocessing script from a template before running it (args: python_bin, writer_script_path, template_name, output_script_path)\n\nOutput contract: Return a JSON object with exactly these fields and types: status: str, message: str, artifact_path: str, preprocessed_data_path: str, preprocessor_script_path: str.\n\nExecution guidance:\n1. Use the provided tools instead of inventing shell transcripts.\n2. When state is uncertain, inspect first. Check what exists and what is needed before running mutating or expensive commands.\n3. Use tool outputs to decide the next step.\n4. Only return success after the required artifacts are actually created.\n5. If work cannot proceed safely, return the structured failure explanation instead of inventing outputs.\nExamples:\nInput: Visualize the aligned monthly sales data in models/data_visualizer/data/aligned_sales.json\nCommand trajectory: preparePythonEnv(demo_root=\"models/data_visualizer\"), runPythonScript(python_bin=\"models/data_visualizer/.venv/bin/python\", script_path=\"models/data_visualizer/scripts/visualize_data.py\", input_path=\"models/data_visualizer/data/aligned_sales.json\", output_path=\"models/data_visualizer/output/aligned_chart.svg\")\nFinal output: {\"status\":\"success\",\"message\":\"Visualization created directly from aligned input.\",\"artifact_path\":\"models/data_visualizer/output/aligned_chart.svg\",\"preprocessed_data_path\":\"\",\"preprocessor_script_path\":\"\"}\n\nInput: Visualize the monthly revenue CSV in models/data_visualizer/data/monthly_revenue.csv\nCommand trajectory: preparePythonEnv(demo_root=\"models/data_visualizer\"), writePreprocessor(python_bin=\"models/data_visualizer/.venv/bin/python\", writer_script_path=\"models/data_visualizer/scripts/write_preprocessor.py\", template_name=\"monthly_csv_to_json\", output_script_path=\"models/data_visualizer/generated/monthly_csv_to_json.py\"), runPythonScript(python_bin=\"models/data_visualizer/.venv/bin/python\", script_path=\"models/data_visualizer/generated/monthly_csv_to_json.py\", input_path=\"models/data_visualizer/data/monthly_revenue.csv\", output_path=\"models/data_visualizer/generated/monthly_revenue_converted.json\"), runPythonScript(python_bin=\"models/data_visualizer/.venv/bin/python\", script_path=\"models/data_visualizer/scripts/visualize_data.py\", input_path=\"models/data_visualizer/generated/monthly_revenue_converted.json\", output_path=\"models/data_visualizer/output/converted_chart.svg\")\nFinal output: {\"status\":\"success\",\"message\":\"The CSV data was converted with a newly written preprocessing script before visualization.\",\"artifact_path\":\"models/data_visualizer/output/converted_chart.svg\",\"preprocessed_data_path\":\"models/data_visualizer/generated/monthly_revenue_converted.json\",\"preprocessor_script_path\":\"models/data_visualizer/generated/monthly_csv_to_json.py\"}\n\nInput: Visualize the unsupported dataset in models/data_visualizer/data/unsupported_nested.json\nCommand trajectory: no commands\nFinal output: {\"status\":\"unsupported_input\",\"message\":\"The dataset cannot be converted into the required list[{label, value}] structure without inventing numeric values.\",\"artifact_path\":\"\",\"preprocessed_data_path\":\"\",\"preprocessor_script_path\":\"\"}",
+        "tools": [
+          {
+            "arguments": [
+              {
+                "description": "Path to the demo root directory",
+                "name": "demo_root"
+              }
+            ],
+            "command": "if [ ! -d <demo_root>/.venv ]; then python3 -m venv <demo_root>/.venv || python3 -m venv --without-pip <demo_root>/.venv; fi; if [ -x <demo_root>/.venv/bin/pip ] && grep -q '[^[:space:]#]' <demo_root>/requirements.txt; then <demo_root>/.venv/bin/pip install -r <demo_root>/requirements.txt; fi",
+            "description": "Create or activate the demo Python environment using the provided requirements.txt",
+            "name": "preparePythonEnv"
+          },
+          {
+            "arguments": [
+              {
+                "description": "The Python interpreter inside the prepared environment",
+                "name": "python_bin"
+              },
+              {
+                "description": "Path to the Python script to execute",
+                "name": "script_path"
+              },
+              {
+                "description": "Input dataset path",
+                "name": "input_path"
+              },
+              {
+                "description": "Output artifact path",
+                "name": "output_path"
+              }
+            ],
+            "command": "<python_bin> <script_path> --input <input_path> --output <output_path>",
+            "description": "Run an existing Python script with input and output paths",
+            "name": "runPythonScript"
+          },
+          {
+            "arguments": [
+              {
+                "description": "The Python interpreter inside the prepared environment",
+                "name": "python_bin"
+              },
+              {
+                "description": "The helper that writes a new preprocessing script",
+                "name": "writer_script_path"
+              },
+              {
+                "description": "The conversion template to materialize",
+                "name": "template_name"
+              },
+              {
+                "description": "Where to write the generated preprocessing script",
+                "name": "output_script_path"
+              }
+            ],
+            "command": "<python_bin> <writer_script_path> --template <template_name> --output <output_script_path>",
+            "description": "Write a new preprocessing script from a template before running it",
+            "name": "writePreprocessor"
+          }
+        ]
+      },
+      "system_prompt": "You are data visualization agent.\nTask: DataVisualizer\nBehavior: Ensure a local Python environment exists, run the visualization script on aligned data, write and run a preprocessing script when conversion is straightforward, and otherwise return a structured explanation.\nRules:\n- DO: leave the original input files unchanged\n- DO: return a structured explanation when visualization cannot proceed safely\n\nAvailable tools:\n- preparePythonEnv: Create or activate the demo Python environment using the provided requirements.txt (args: demo_root)\n- runPythonScript: Run an existing Python script with input and output paths (args: python_bin, script_path, input_path, output_path)\n- writePreprocessor: Write a new preprocessing script from a template before running it (args: python_bin, writer_script_path, template_name, output_script_path)\n\nOutput contract: Return a JSON object with exactly these fields and types: status: str, message: str, artifact_path: str, preprocessed_data_path: str, preprocessor_script_path: str.\n\nExecution guidance:\n1. Use the provided tools instead of inventing shell transcripts.\n2. When state is uncertain, inspect first. Check what exists and what is needed before running mutating or expensive commands.\n3. Use tool outputs to decide the next step.\n4. Only return success after the required artifacts are actually created.\n5. If work cannot proceed safely, return the structured failure explanation instead of inventing outputs.\nExamples:\nInput: Visualize the aligned monthly sales data in models/data_visualizer/data/aligned_sales.json\nCommand trajectory: preparePythonEnv(demo_root=\"models/data_visualizer\"), runPythonScript(python_bin=\"models/data_visualizer/.venv/bin/python\", script_path=\"models/data_visualizer/scripts/visualize_data.py\", input_path=\"models/data_visualizer/data/aligned_sales.json\", output_path=\"models/data_visualizer/output/aligned_chart.svg\")\nFinal output: {\"status\":\"success\",\"message\":\"Visualization created directly from aligned input.\",\"artifact_path\":\"models/data_visualizer/output/aligned_chart.svg\",\"preprocessed_data_path\":\"\",\"preprocessor_script_path\":\"\"}\n\nInput: Visualize the monthly revenue CSV in models/data_visualizer/data/monthly_revenue.csv\nCommand trajectory: preparePythonEnv(demo_root=\"models/data_visualizer\"), writePreprocessor(python_bin=\"models/data_visualizer/.venv/bin/python\", writer_script_path=\"models/data_visualizer/scripts/write_preprocessor.py\", template_name=\"monthly_csv_to_json\", output_script_path=\"models/data_visualizer/generated/monthly_csv_to_json.py\"), runPythonScript(python_bin=\"models/data_visualizer/.venv/bin/python\", script_path=\"models/data_visualizer/generated/monthly_csv_to_json.py\", input_path=\"models/data_visualizer/data/monthly_revenue.csv\", output_path=\"models/data_visualizer/generated/monthly_revenue_converted.json\"), runPythonScript(python_bin=\"models/data_visualizer/.venv/bin/python\", script_path=\"models/data_visualizer/scripts/visualize_data.py\", input_path=\"models/data_visualizer/generated/monthly_revenue_converted.json\", output_path=\"models/data_visualizer/output/converted_chart.svg\")\nFinal output: {\"status\":\"success\",\"message\":\"The CSV data was converted with a newly written preprocessing script before visualization.\",\"artifact_path\":\"models/data_visualizer/output/converted_chart.svg\",\"preprocessed_data_path\":\"models/data_visualizer/generated/monthly_revenue_converted.json\",\"preprocessor_script_path\":\"models/data_visualizer/generated/monthly_csv_to_json.py\"}\n\nInput: Visualize the unsupported dataset in models/data_visualizer/data/unsupported_nested.json\nCommand trajectory: no commands\nFinal output: {\"status\":\"unsupported_input\",\"message\":\"The dataset cannot be converted into the required list[{label, value}] structure without inventing numeric values.\",\"artifact_path\":\"\",\"preprocessed_data_path\":\"\",\"preprocessor_script_path\":\"\"}",
+      "tools": [
+        {
+          "description": "Create or activate the demo Python environment using the provided requirements.txt",
+          "name": "preparePythonEnv",
+          "params_json_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "demo_root": {
+                "description": "Path to the demo root directory",
+                "type": "string"
+              }
+            },
+            "required": [
+              "demo_root"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Run an existing Python script with input and output paths",
+          "name": "runPythonScript",
+          "params_json_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "input_path": {
+                "description": "Input dataset path",
+                "type": "string"
+              },
+              "output_path": {
+                "description": "Output artifact path",
+                "type": "string"
+              },
+              "python_bin": {
+                "description": "The Python interpreter inside the prepared environment",
+                "type": "string"
+              },
+              "script_path": {
+                "description": "Path to the Python script to execute",
+                "type": "string"
+              }
+            },
+            "required": [
+              "python_bin",
+              "script_path",
+              "input_path",
+              "output_path"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Write a new preprocessing script from a template before running it",
+          "name": "writePreprocessor",
+          "params_json_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "output_script_path": {
+                "description": "Where to write the generated preprocessing script",
+                "type": "string"
+              },
+              "python_bin": {
+                "description": "The Python interpreter inside the prepared environment",
+                "type": "string"
+              },
+              "template_name": {
+                "description": "The conversion template to materialize",
+                "type": "string"
+              },
+              "writer_script_path": {
+                "description": "The helper that writes a new preprocessing script",
+                "type": "string"
+              }
+            },
+            "required": [
+              "python_bin",
+              "writer_script_path",
+              "template_name",
+              "output_script_path"
+            ],
+            "type": "object"
+          }
+        }
+      ]
+    }
+  ],
+  "model_path": "models/data_visualizer/data_visualizer.agent",
+  "planner_prompt": null,
+  "planner_prompt_dump": null
+}
