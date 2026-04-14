@@ -1,0 +1,15 @@
+{
+  "series": [
+    {
+      "month": "Jan",
+      "revenue": "high"
+    },
+    {
+      "month": "Feb",
+      "revenue": "medium"
+    }
+  ],
+  "metadata": {
+    "currency": "USD"
+  }
+}

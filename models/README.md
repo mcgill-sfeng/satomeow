@@ -2,7 +2,8 @@
 
 This document defines the object structure produced by textX after parsing a `.agent` file.
 
-It is intended for the transformation stage, so the Jinja2/code generation team can reliably access model attributes without guessing the parsed structure.
+It is intended for the transformation stage, so the Jinja2/code generation team can reliably access model attributes
+without guessing the parsed structure.
 
 ## Root Object
 
@@ -22,8 +23,8 @@ Attributes:
 
 - `planner: Planner`
 - `executors: list[Executor]`
-- `rules: list[Rule]`  
-- `skills: list[Skill]`  
+- `rules: list[Rule]`
+- `skills: list[Skill]`
 
 ---
 
@@ -38,7 +39,7 @@ In the current textX grammar implementation, `Agent` is represented concretely a
 
 Shared conceptual fields:
 
-- `reasoningStrategy`
+- `reasoningStrategy`  // stores the DSL `reasoning` field, i.e. SDK reasoning effort
 - `llm`
 - `persona`
 - `rules`
@@ -53,7 +54,7 @@ Represents the planner agent.
 
 Attributes:
 
-- `reasoningStrategy: str`
+- `reasoningStrategy: str`  // one of: none | minimal | low | medium | high | xhigh
 - `llm: str`
 - `persona: str`
 - `rules: list[Rule]`  
@@ -67,7 +68,7 @@ Represents an executor agent.
 
 Attributes:
 
-- `reasoningStrategy: str`
+- `reasoningStrategy: str`  // one of: none | minimal | low | medium | high | xhigh
 - `llm: str`
 - `persona: str`
 - `rules: list[Rule]`  
@@ -122,8 +123,26 @@ Represents one few-shot example for a task.
 Attributes:
 
 - `input: str`
-- `commands: list[str]`
+- `commands: list[ExampleCommand]`
 - `output: str`
+
+### ExampleCommand
+
+Represents one structured tool call inside an example.
+
+Attributes:
+
+- `toolName: str`
+- `arguments: list[ExampleCommandArgument]`
+
+### ExampleCommandArgument
+
+Represents one string argument passed to an example tool call.
+
+Attributes:
+
+- `name: str`
+- `value: str`
 
 ---
 
@@ -159,6 +178,7 @@ Attributes:
 ## Containment vs Cross-Reference
 
 ### Containment
+
 These objects are structurally contained inside their parent:
 
 - `model.system`
@@ -169,6 +189,7 @@ These objects are structurally contained inside their parent:
 - `skill.skillArguments`
 
 ### Cross-Reference
+
 These fields refer to globally defined objects:
 
 - `system.rules -> Rule`
@@ -206,5 +227,3 @@ from agent.parser import parse_model
 system = parse_model("models/example_full.agent")
 print(system.planner.persona)
 ```
-
-

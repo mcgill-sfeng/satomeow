@@ -1,0 +1,37 @@
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+from pathlib import Path
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Convert month,revenue CSV into list[{label, value}] JSON.")
+    parser.add_argument("--input", required=True)
+    parser.add_argument("--output", required=True)
+    args = parser.parse_args()
+
+    input_path = Path(args.input)
+    output_path = Path(args.output)
+    rows = []
+
+    with input_path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        required = {"month", "revenue"}
+        if not required.issubset(reader.fieldnames or set()):
+            raise ValueError("Expected CSV columns: month,revenue")
+        for row in reader:
+            rows.append({
+                "label": row["month"],
+                "value": float(row["revenue"]),
+            })
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(rows, indent=2), encoding="utf-8")
+    print(output_path)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

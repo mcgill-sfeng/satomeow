@@ -17,7 +17,18 @@ Processing order (textX runs processors bottom-up):
   Model    (no-op at processor level; transformed by build_system_from_model)
 """
 
-from agent.metamodel import System, Planner, Executor, Task, SkillArgument
+from agent.metamodel import (
+    System,
+    Planner,
+    Executor,
+    Task,
+    OutputSpec,
+    OutputField,
+    SkillArgument,
+    ChatModeAgent,
+    ExampleCommand,
+    ExampleCommandArgument,
+)
 
 
 def build_system_from_model(model):
@@ -41,6 +52,7 @@ def build_system_from_model(model):
     """
     rules = [item for item in model.items if item.__class__.__name__ == "Rule"]
     skills = [item for item in model.items if item.__class__.__name__ == "Skill"]
+    chat_agents = [item for item in model.items if item.__class__.__name__ == "ChatAgent"]
 
     # First-occurrence wins; duplicates are caught by validate_skills/validate_rules.
     rules_by_name = {}
@@ -77,8 +89,8 @@ def build_system_from_model(model):
             task.name = item.name
             task.inputDescription = item.inputDescription
             task.behavior = item.behavior
-            task.outputSchema = item.outputSchema if item.outputSchema else "string"
-            task.examples = list(item.examples)
+            task.outputSpec = _build_output_spec(item.outputSpec)
+            task.examples = [_build_example(example) for example in item.examples]
             task.skills = [skills_by_name[s] for s in skill_refs if s in skills_by_name]
             task._source_obj = item
             task._skill_refs = skill_refs
@@ -86,13 +98,61 @@ def build_system_from_model(model):
             executor.task = task
             executors.append(executor)
 
+    chat_agent = None
+    if chat_agents:
+        raw = chat_agents[0]
+        chat_agent = ChatModeAgent()
+        chat_agent.name = raw.name
+        chat_agent.persona = raw.persona
+        chat_agent.llm = raw.llm or model.llm
+        chat_agent.reasoningStrategy = raw.reasoningStrategy or model.reasoningStrategy
+        chat_agent.goal = raw.goal
+        chat_agent.questions = list(raw.questions) if raw.questions else []
+        chat_agent.executor_ref = raw.executorRef if raw.executorRef else None
+        chat_agent._source_obj = raw
+
     system = System()
     system.planner = planner
     system.executors = executors
     system.rules = rules
     system.skills = skills
+    system.chat_agent = chat_agent
 
     return system
+
+
+def _build_output_spec(raw_spec) -> OutputSpec:
+    """Convert a textX OutputSpec object (or None) into a metamodel OutputSpec."""
+    if raw_spec is None:
+        return OutputSpec(format="string", fields=[])
+
+    cls = raw_spec.__class__.__name__
+
+    if cls == "TextOutputSpec":
+        return OutputSpec(format=str(raw_spec.format), fields=[])
+
+    if cls == "StructuredOutputSpec":
+        fields = [OutputField(name=f.name, type=str(f.type)) for f in (raw_spec.fields or [])]
+        return OutputSpec(format=str(raw_spec.format), fields=fields)
+
+    # Fallback: unknown spec type — treat as plain string
+    return OutputSpec(format="string", fields=[])
+
+
+def _build_example(raw_example):
+    raw_example.commands = [_build_example_command(command) for command in (raw_example.commands or [])]
+    return raw_example
+
+
+def _build_example_command(raw_command) -> ExampleCommand:
+    command = ExampleCommand(toolName=raw_command.toolName)
+    command._source_obj = raw_command
+    command.arguments = []
+    for raw_argument in raw_command.arguments or []:
+        argument = ExampleCommandArgument(name=raw_argument.name, value=raw_argument.value)
+        argument._source_obj = raw_argument
+        command.arguments.append(argument)
+    return command
 
 
 def process_rule(rule):
@@ -105,7 +165,7 @@ def process_rule(rule):
     Returns:
         Rule: Same object with `negative` attribute added.
     """
-    rule.negative = (rule.ruleType == "dont")
+    rule.negative = rule.ruleType == "dont"
     return rule
 
 

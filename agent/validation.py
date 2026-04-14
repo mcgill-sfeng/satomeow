@@ -1,5 +1,7 @@
 from textx import TextXSemanticError, get_location
 
+ALLOWED_REASONING_EFFORTS = {"none", "minimal", "low", "medium", "high", "xhigh"}
+
 
 def validate_system(system):
     validate_rules(system.rules)
@@ -11,6 +13,9 @@ def validate_system(system):
     for executor in system.executors:
         validate_executor(executor)
         validate_executor_refs(executor, known_skill_names, known_rule_names)
+    if system.chat_agent is not None:
+        executor_names = {e.task.name for e in system.executors if e.task}
+        validate_chat_agent(system.chat_agent, executor_names)
 
 
 def validate_executor_refs(executor, known_skill_names, known_rule_names):
@@ -39,15 +44,15 @@ def validate_unique_executor_names(executors):
 
 
 def validate_planner(planner):
-    check_required(planner, "reasoningStrategy")
     check_required(planner, "llm")
     check_required(planner, "persona")
+    validate_reasoning_effort(planner, "reasoningStrategy")
 
 
 def validate_executor(executor):
-    check_required(executor, "reasoningStrategy")
     check_required(executor, "llm")
     check_required(executor, "persona")
+    validate_reasoning_effort(executor, "reasoningStrategy")
 
     if executor.task:
         validate_task(executor.task)
@@ -58,16 +63,69 @@ def validate_task(task):
     check_required(task, "inputDescription")
     check_required(task, "behavior")
 
-    if task.outputSchema is None:
-        task.outputSchema = "string"
+    if task.outputSpec is None:
+        from agent.metamodel import OutputSpec
+
+        task.outputSpec = OutputSpec(format="string", fields=[])
 
     for example in task.examples:
-        validate_task_example(example)
+        validate_task_example(example, task)
 
 
-def validate_task_example(example):
+def validate_task_example(example, task):
     check_required(example, "input")
     check_required(example, "output")
+    known_skills = {skill.name: skill for skill in task.skills}
+    for command in getattr(example, "commands", []) or []:
+        check_required(command, "toolName")
+        if command.toolName not in known_skills:
+            _raise_semantic(
+                f"Unknown example command tool: '{command.toolName}'",
+                command,
+            )
+        validate_example_command_arguments(command, known_skills[command.toolName])
+
+
+def validate_example_command_arguments(command, skill):
+    seen = set()
+    known_args = {arg.name for arg in skill.skillArguments}
+    for argument in command.arguments or []:
+        check_required(argument, "name")
+        check_required(argument, "value")
+        if argument.name in seen:
+            _raise_semantic(
+                f"Duplicate example command argument '{argument.name}' for tool '{command.toolName}'",
+                argument,
+            )
+        seen.add(argument.name)
+        if argument.name not in known_args:
+            _raise_semantic(
+                f"Unknown example command argument '{argument.name}' for tool '{command.toolName}'",
+                argument,
+            )
+    missing = known_args - seen
+    if missing:
+        _raise_semantic(
+            f"Missing example command arguments for tool '{command.toolName}': {', '.join(sorted(missing))}",
+            command,
+        )
+
+
+def validate_chat_agent(chat_agent, executor_names: set):
+    check_required(chat_agent, "name")
+    check_required(chat_agent, "persona")
+    check_required(chat_agent, "goal")
+    validate_reasoning_effort(chat_agent, "reasoningStrategy")
+    if not chat_agent.questions:
+        _raise_semantic(
+            f"ChatModeAgent '{chat_agent.name}' must define at least one question",
+            chat_agent,
+        )
+    if chat_agent.executor_ref is not None and chat_agent.executor_ref not in executor_names:
+        _raise_semantic(
+            f"ChatModeAgent '{chat_agent.name}' references unknown executor: '{chat_agent.executor_ref}'",
+            chat_agent,
+        )
 
 
 def validate_rules(rules):
@@ -118,6 +176,23 @@ def check_required(obj, field):
 
     if isinstance(value, str) and value.strip() == "":
         _raise_semantic(f"{obj.__class__.__name__}.{field} is required", obj)
+
+
+def validate_reasoning_effort(obj, field):
+    value = getattr(obj, field, None)
+    if value is None:
+        return
+    if value == "":
+        setattr(obj, field, None)
+        return
+    if isinstance(value, str) and len(value) >= 2 and value[0] == value[-1] == '"':
+        value = value[1:-1]
+        setattr(obj, field, value)
+    if value not in ALLOWED_REASONING_EFFORTS:
+        _raise_semantic(
+            f"{obj.__class__.__name__}.{field} must be one of: " f"{', '.join(sorted(ALLOWED_REASONING_EFFORTS))}",
+            obj,
+        )
 
 
 def _raise_semantic(message, model_obj):

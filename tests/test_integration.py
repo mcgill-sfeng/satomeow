@@ -1,5 +1,5 @@
-from agent.parser import parse_model
 from agent.ir import build_prompt_ir
+from agent.parser import parse_model
 
 
 def test_cross_references_are_resolved():
@@ -62,15 +62,17 @@ def test_prompt_ir_structure():
     assert "executors" in ir
     assert isinstance(ir["executors"], list)
 
-    assert ir["planner"]["llm"] == "gpt-5"
+    assert ir["planner"]["llm"] == "gpt-5.4-nano"
     assert ir["planner"]["persona"] == "planner"
     assert ir["executors"][0]["task"]["name"] == "WebResearch"
+    assert ir["executors"][0]["name"] == "WebResearch"
 
 
 def test_prompt_ir_output_schema():
     system = parse_model("models/example_full.agent")
     ir = build_prompt_ir(system)
-    assert ir["executors"][0]["task"]["output_schema"] == "markdown"
+    assert ir["executors"][0]["task"]["output_format"] == "markdown"
+    assert ir["executors"][0]["task"]["output_fields"] == []
 
 
 def test_prompt_ir_skills():
@@ -81,3 +83,11 @@ def test_prompt_ir_skills():
     skill_names = {s["name"] for s in task_skills}
     assert "webSearch" in skill_names
     assert "docReader" in skill_names
+
+
+def test_prompt_ir_rules_include_metadata():
+    system = parse_model("models/example_full.agent")
+    ir = build_prompt_ir(system)
+    rule = next(rule for rule in ir["rules"] if rule["name"] == "no_hallucination")
+    assert rule["negative"] is True
+    assert rule["description"] == "do not make up facts"

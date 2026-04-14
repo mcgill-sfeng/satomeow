@@ -7,10 +7,14 @@
     { "include": "#comment" },
     { "include": "#string" },
     { "include": "#rule-decl" },
+    { "include": "#chat-decl" },
     { "include": "#global-keyword" },
     { "include": "#executor-name" },
     { "include": "#body-keyword" },
+    { "include": "#output-format" },
+    { "include": "#output-type" },
     { "include": "#param-decl" },
+    { "include": "#example-command" },
     { "include": "#skill-name" },
     { "include": "#punctuation" }
   ],
@@ -39,6 +43,15 @@
       }
     },
 
+    "chat-decl": {
+      "comment": "chat keyword at line start — chat agent declaration",
+      "match": "^(chat)\\s+([a-zA-Z_][a-zA-Z0-9_]*)(?=\\s*:\\s*\")",
+      "captures": {
+        "1": { "name": "keyword.other.declaration.agent" },
+        "2": { "name": "entity.name.class.agent" }
+      }
+    },
+
     "global-keyword": {
       "comment": "Top-level llm/reasoning at column 0 — captured before executor-name",
       "match": "^(llm|reasoning)(?=\\s*:)",
@@ -54,9 +67,21 @@
     },
 
     "body-keyword": {
-      "comment": "Field keywords inside executor and skill blocks",
-      "match": "\\b(llm|reasoning|input|behavior|output|skills|rules|example|commands|command|description)(?=\\s*[:\\{])",
+      "comment": "Field keywords inside executor, chat, and skill blocks",
+      "match": "\\b(llm|reasoning|input|behavior|output|skills|rules|example|commands|command|description|goal|questions|executor)(?=\\s*[:\\{])",
       "name": "keyword.other.agent"
+    },
+
+    "output-format": {
+      "comment": "Output format specifiers after 'output:'",
+      "match": "\\b(json|toml|yaml|string|markdown)\\b",
+      "name": "support.type.output-format.agent"
+    },
+
+    "output-type": {
+      "comment": "Output field types in structured output blocks",
+      "match": "\\b(list\\[(str|int|float|bool)\\]|str|int|float|bool)\\b",
+      "name": "storage.type.agent"
     },
 
     "param-decl": {
@@ -65,6 +90,14 @@
       "captures": {
         "1": { "name": "keyword.other.agent" },
         "2": { "name": "variable.parameter.agent" }
+      }
+    },
+
+    "example-command": {
+      "comment": "Structured example command tool call: toolName(...)",
+      "match": "([a-zA-Z_][a-zA-Z0-9_]*)(?=\\s*\\()",
+      "captures": {
+        "1": { "name": "entity.name.function.call.agent" }
       }
     },
 
@@ -80,6 +113,7 @@
       "patterns": [
         { "match": "[\\[\\]]", "name": "punctuation.definition.list.agent" },
         { "match": "[\\{\\}]", "name": "punctuation.definition.block.agent" },
+        { "match": "[\\(\\)]", "name": "punctuation.definition.parameters.agent" },
         { "match": ":", "name": "punctuation.separator.agent" },
         { "match": ",", "name": "punctuation.separator.comma.agent" }
       ]

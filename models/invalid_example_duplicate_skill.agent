@@ -1,5 +1,4 @@
-llm: "gpt-5"
-reasoning: "chain-of-thought"
+llm: "gpt-5.4-nano"
 
 Summarize : "text summarizer" {
     input: "A long document"
@@ -7,7 +6,7 @@ Summarize : "text summarizer" {
     skills: [web_search]
     example {
         input: "doc text"
-        commands: ["read"]
+        commands: [web_search(query: "doc text")]
         output: "summary"
     }
 }

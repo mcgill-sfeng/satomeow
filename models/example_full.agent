@@ -1,29 +1,36 @@
-llm: "gpt-5"
-reasoning: "chain-of-thought"
+llm: "gpt-5.4-nano"
+reasoning: "medium"
 
 WebResearch : "research agent" {
     input: "A user question requiring web research"
     behavior: "Search, extract, and summarize relevant information"
-    output: "markdown"
+    output: markdown
     skills: [webSearch, docReader]
     rules: [verify_sources, no_hallucination]
 
     example {
         input: "What are the latest EU AI Act compliance deadlines?"
-        commands: ["ddgr EU AI Act compliance deadlines 2025", "ddgr EU AI Act enforcement timeline site:ec.europa.eu"]
+        commands: [
+            webSearch(query: "EU AI Act compliance deadlines 2025"),
+            webSearch(query: "EU AI Act enforcement timeline site:ec.europa.eu")
+        ]
         output: "The EU AI Act entered into force in August 2024. Prohibitions on unacceptable-risk AI apply from February 2025; obligations for general-purpose AI models apply from August 2025; high-risk AI system rules apply from August 2026."
     }
 
     example {
         input: "Compare the REST and GraphQL APIs of GitHub"
-        commands: ["ddgr GitHub REST API v3 documentation", "ddgr GitHub GraphQL API v4 documentation", "curl -s https://docs.github.com/en/rest"]
+        commands: [
+            webSearch(query: "GitHub REST API v3 documentation"),
+            webSearch(query: "GitHub GraphQL API v4 documentation"),
+            docReader(url: "https://docs.github.com/en/rest")
+        ]
         output: "GitHub REST API v3 uses resource-oriented URLs and returns fixed JSON shapes; GitHub GraphQL API v4 lets callers request exactly the fields they need, reducing over-fetching. REST is simpler for simple CRUD; GraphQL is preferred for complex, nested queries."
     }
 }
 
 TextEditor : "editor agent" {
-    llm: "claude-sonnet-4.5"
-    reasoning: "react"
+    llm: "gpt-5.4-nano"
+    reasoning: "medium"
     input: "Text to edit with instructions"
     behavior: "Apply edits based on user instructions"
     rules: [no_hallucination]

@@ -1,12 +1,11 @@
-llm: "gpt-5"
-reasoning: "chain-of-thought"
+llm: "gpt-5.4-nano"
 
 Summarize : "first summarizer" {
     input: "doc"
     behavior: "summarize"
     example {
         input: "doc"
-        commands: ["cmd"]
+        commands: []
         output: "out"
     }
 }
@@ -16,7 +15,7 @@ Summarize : "second summarizer" {
     behavior: "summarize differently"
     example {
         input: "doc"
-        commands: ["cmd"]
+        commands: []
         output: "out"
     }
 }

@@ -9,15 +9,18 @@ def build_prompt_ir(system) -> dict:
             "name": skill.name,
             "command": skill.command,
             "description": skill.description,
-            "arguments": [
-                {
-                    "name": arg.name,
-                    "description": arg.description
-                }
-                for arg in skill.skillArguments
-            ]
+            "arguments": [{"name": arg.name, "description": arg.description} for arg in skill.skillArguments],
         }
         for skill in system.skills
+    }
+
+    global_rules = {
+        rule.name: {
+            "name": rule.name,
+            "negative": rule.negative,
+            "description": rule.description,
+        }
+        for rule in system.rules
     }
 
     # ---- Planner ----
@@ -25,7 +28,7 @@ def build_prompt_ir(system) -> dict:
         "reasoning_strategy": system.planner.reasoningStrategy,
         "llm": system.planner.llm,
         "persona": system.planner.persona,
-        "rules": [rule.description for rule in system.planner.rules],
+        "rules": [global_rules[rule.name] for rule in system.planner.rules],
     }
 
     # ---- Executors ----
@@ -35,42 +38,64 @@ def build_prompt_ir(system) -> dict:
         task_ir = None
 
         if executor.task is not None:
+            spec = executor.task.outputSpec
             task_ir = {
                 "name": executor.task.name,
                 "input_description": executor.task.inputDescription,
                 "behavior": executor.task.behavior,
-                "output_schema": executor.task.outputSchema,
+                "output_format": spec.format if spec else "string",
+                "output_fields": [{"name": f.name, "type": f.type} for f in (spec.fields if spec else [])],
                 "examples": [
                     {
                         "input": ex.input,
-                        "commands": list(ex.commands),
+                        "commands": [
+                            {
+                                "tool_name": command.toolName,
+                                "arguments": [
+                                    {"name": argument.name, "value": argument.value} for argument in command.arguments
+                                ],
+                            }
+                            for command in ex.commands
+                        ],
                         "output": ex.output,
                     }
                     for ex in executor.task.examples
                 ],
-                "skills": [
-                    global_skills[skill.name]
-                    for skill in executor.task.skills
-                ],
+                "skills": [global_skills[skill.name] for skill in executor.task.skills],
             }
 
-        executors.append({
-            "reasoning_strategy": executor.reasoningStrategy,
-            "llm": executor.llm,
-            "persona": executor.persona,
-            "rules": [rule.description for rule in executor.rules],
-            "task": task_ir,
-        })
+        executors.append(
+            {
+                "name": executor.task.name if executor.task is not None else executor.persona,
+                "reasoning_strategy": executor.reasoningStrategy,
+                "llm": executor.llm,
+                "persona": executor.persona,
+                "rules": [global_rules[rule.name] for rule in executor.rules],
+                "task": task_ir,
+            }
+        )
+
+    # ---- Chat agent ----
+    chat_agent_ir = None
+    if system.chat_agent is not None:
+        ca = system.chat_agent
+        chat_agent_ir = {
+            "name": ca.name,
+            "persona": ca.persona,
+            "llm": ca.llm,
+            "reasoning_strategy": ca.reasoningStrategy,
+            "goal": ca.goal,
+            "questions": list(ca.questions),
+            "executor_ref": ca.executor_ref,
+        }
 
     # ---- System-level ----
     system_ir = {
         "planner": planner,
         "executors": executors,
-        "rules": [rule.description for rule in system.rules],
-        "skills": [
-            global_skills[skill.name]
-            for skill in system.skills
-        ],
+        "rules": [global_rules[rule.name] for rule in system.rules],
+        "skills": [global_skills[skill.name] for skill in system.skills],
+        "chat_agent": chat_agent_ir,
     }
 
     return system_ir

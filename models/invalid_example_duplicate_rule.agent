@@ -1,12 +1,11 @@
-llm: "gpt-5"
-reasoning: "chain-of-thought"
+llm: "gpt-5.4-nano"
 
 Summarize : "text summarizer" {
     input: "A long document"
     behavior: "Summarize the document"
     example {
         input: "doc text"
-        commands: ["read"]
+        commands: []
         output: "summary"
     }
 }

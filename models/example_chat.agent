@@ -1,0 +1,16 @@
+llm: "gpt-5.4-nano"
+
+Greeter : "greeting agent" {
+    input: "A name and greeting style to use"
+    behavior: "Greet the person by name in the requested style"
+    output: string
+}
+
+chat Intake : "greeting intake agent" {
+    goal: "Greet the user by name in their preferred style"
+    questions: [
+        "What is your name?",
+        "Do you prefer a formal or casual greeting?"
+    ]
+    executor: Greeter
+}
