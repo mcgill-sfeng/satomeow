@@ -13,17 +13,8 @@ from agent.parser import parse_model
 
 
 def main(argv=None):
-    argv = list(argv) if argv is not None else None
-    if argv is None:
-        import sys
-
-        argv = sys.argv[1:]
-
-    if _looks_like_legacy_invocation(argv):
-        return _run_inspect(_build_legacy_parser().parse_args(argv))
-
-    parser = _build_parser()
-    args = parser.parse_args(argv)
+    argv = list(argv) if argv is not None else sys.argv[1:]
+    args = _build_parser().parse_args(argv)
     return args.func(args)
 
 
@@ -157,22 +148,6 @@ def _build_parser():
     return parser
 
 
-def _build_legacy_parser():
-    parser = argparse.ArgumentParser(description="Parse an .agent file and build Prompt IR.")
-    _add_model_argument(parser)
-    parser.add_argument(
-        "--print-model-info",
-        action="store_true",
-        help="Print a small summary of the parsed model",
-    )
-    parser.add_argument(
-        "--print-ir",
-        action="store_true",
-        help="Print the generated Prompt IR as JSON",
-    )
-    return parser
-
-
 def _add_model_argument(parser):
     parser.add_argument("model_path", help="Path to the .agent model file")
 
@@ -210,10 +185,6 @@ def _run_compile(args):
         return
 
     print(f"Sidecar written to: {sidecar}")
-
-
-def _looks_like_legacy_invocation(argv: list[str]) -> bool:
-    return bool(argv) and argv[0] not in {"inspect", "generate", "portable", "run", "chat", "compile", "prompt"}
 
 
 def _run_inspect(args):
@@ -370,7 +341,6 @@ def _run_chat(args):
 
     _print_logo_v2()
 
-    # Banner
     print("─" * 60, flush=True)
     print(f"  {chat_agent.name} ({chat_agent.persona})", flush=True)
     print(f"  Goal: {goal}", flush=True)
@@ -379,7 +349,6 @@ def _run_chat(args):
     print("─" * 60, flush=True)
     print(flush=True)
 
-    # Q&A loop — runtime-driven, one question at a time
     answers: list[str] = []
     for i, question in enumerate(questions):
         print(f"[{i + 1}/{len(questions)}] {question}", flush=True)
@@ -395,7 +364,6 @@ def _run_chat(args):
     print(flush=True)
     print("Thinking...", flush=True)
 
-    # LLM-generated confirmation summary
     try:
         confirmation = runtime.generate_confirmation(goal, questions, answers)
     except Exception as exc:
@@ -416,7 +384,6 @@ def _run_chat(args):
         print("Cancelled.", flush=True)
         return
 
-    # Build bundled one-shot input and execute
     bundled_input = AgentSystemRuntime._build_chat_input(goal, questions, answers)
 
     if args.verbose:

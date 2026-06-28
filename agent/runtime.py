@@ -263,7 +263,6 @@ class AgentSystemRuntime:
             )
 
             if hooks.executor_name is None:
-                # Planner did not hand off — fall back to first executor gracefully.
                 hooks.executor_name = executors[0].task.name
                 hooks.planner_reason = "Planner did not hand off; defaulted to first executor."
 
@@ -470,7 +469,7 @@ def build_model_settings(reasoning_effort: str | None) -> ModelSettings:
     }
     if reasoning_effort not in valid_efforts:
         return ModelSettings()
-    
+
     return ModelSettings(
         reasoning=Reasoning(
             effort=cast(Literal["none", "minimal", "low", "medium", "high", "xhigh"], reasoning_effort)
@@ -526,7 +525,6 @@ def build_examples_prompt(
     replace the hand-written examples declared in the .agent file.
     """
     if compiled_examples is not None:
-        # DSPy-compiled demonstrations — richer heading, compiled content.
         heading = (
             "Examples (DSPy-compiled demonstrations):\n"
             "These are bootstrapped high-signal demonstrations. Follow their patterns closely.\n"
@@ -757,7 +755,6 @@ def render_call_graph_dot(graph: CallGraph) -> str:
         "  rankdir=LR;",
         '  node [shape=box fontname="Helvetica" style=filled fillcolor=white];',
     ]
-    # Special shapes for terminal nodes
     for node in terminal_nodes:
         label = node.replace("[", "").replace("]", "")
         lines.append(f'  "{node}" [shape=ellipse label="{label}"];')
@@ -874,7 +871,6 @@ def _skill_to_dict(skill: Any) -> dict[str, Any]:
 
 def _truncate_value(value: str, max_len: int) -> str:
     """Normalise whitespace and truncate with an ellipsis if needed."""
-    # Collapse all whitespace (newlines, tabs, runs of spaces) into a single space.
     normalised = re.sub(r"\s+", " ", value).strip()
     if len(normalised) > max_len:
         return normalised[: max_len - 1] + "…"

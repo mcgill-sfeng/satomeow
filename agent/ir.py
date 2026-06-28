@@ -1,14 +1,7 @@
 def serialize_system_to_dict(system) -> dict:
-    """
-    Serialize a System into a flat, JSON-friendly dictionary for the
-    ``inspect --print-ir`` debug command.
+    """Serialize a System into a flat, JSON-friendly dictionary for the
+    ``inspect --print-ir`` debug command."""
 
-    This is no longer a code-generation stage: codegen now constructs the
-    metamodel objects directly from the System. This dict survives only to back
-    the human-readable ``--print-ir`` output.
-    """
-
-    # ---- Global skills ----
     global_skills = {
         skill.name: {
             "name": skill.name,
@@ -28,7 +21,6 @@ def serialize_system_to_dict(system) -> dict:
         for rule in system.rules
     }
 
-    # ---- Planner ----
     planner = {
         "reasoning_strategy": system.planner.reasoningStrategy,
         "llm": system.planner.llm,
@@ -36,7 +28,6 @@ def serialize_system_to_dict(system) -> dict:
         "rules": [global_rules[rule.name] for rule in system.planner.rules],
     }
 
-    # ---- Executors ----
     executors = []
 
     for executor in system.executors:
@@ -80,7 +71,6 @@ def serialize_system_to_dict(system) -> dict:
             }
         )
 
-    # ---- Chat agent ----
     chat_agent_ir = None
     if system.chatAgent is not None:
         ca = system.chatAgent
@@ -94,7 +84,6 @@ def serialize_system_to_dict(system) -> dict:
             "executor_ref": ca.executor_ref,
         }
 
-    # ---- System-level ----
     system_ir = {
         "planner": planner,
         "executors": executors,
