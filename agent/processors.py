@@ -116,7 +116,7 @@ def build_system_from_model(model):
     system.executors = executors
     system.rules = rules
     system.skills = skills
-    system.chat_agent = chat_agent
+    system.chatAgent = chat_agent
 
     return system
 
@@ -146,11 +146,11 @@ def _build_example(raw_example):
 
 def _build_example_command(raw_command) -> ExampleCommand:
     command = ExampleCommand(toolName=raw_command.toolName)
-    command._source_obj = raw_command
+    setattr(command, "_source_obj", raw_command)
     command.arguments = []
     for raw_argument in raw_command.arguments or []:
         argument = ExampleCommandArgument(name=raw_argument.name, value=raw_argument.value)
-        argument._source_obj = raw_argument
+        setattr(argument, "_source_obj", raw_argument)
         command.arguments.append(argument)
     return command
 

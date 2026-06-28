@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 
 from agent.codegen import generate_agent_module, generate_portable_agent_bundle
-from agent.ir import build_prompt_ir
+from agent.ir import serialize_system_to_dict
 from agent.parser import parse_model
 
 
@@ -179,13 +179,11 @@ def _add_model_argument(parser):
 
 def _run_compile(args):
     from agent.dspy_compile import compile_system_spec
-    from agent.ir import build_prompt_ir
     from agent.parser import parse_model
 
     system = parse_model(args.model_path)
-    prompt_ir = build_prompt_ir(system)
 
-    executors_with_examples = [e["name"] for e in prompt_ir["executors"] if e["task"].get("examples")]
+    executors_with_examples = [e.task.name for e in system.executors if e.task.examples]
     if not executors_with_examples:
         print("No executors with examples found — nothing to compile.")
         return
@@ -193,7 +191,7 @@ def _run_compile(args):
     lm = None
     if args.model:
         try:
-            import dspy
+            import dspy  # type: ignore[import-untyped]
 
             lm = dspy.LM(args.model)
         except Exception as exc:
@@ -203,7 +201,7 @@ def _run_compile(args):
     print(f"Compiling {len(executors_with_examples)} executor(s): {', '.join(executors_with_examples)}")
 
     try:
-        sidecar = compile_system_spec(prompt_ir, args.model_path, lm=lm)
+        sidecar = compile_system_spec(system, args.model_path, lm=lm)
     except RuntimeError as exc:
         print(f"[error] {exc}")
         return
@@ -230,7 +228,7 @@ def _run_inspect(args):
             print("First task name:", system.executors[0].task.name)
 
     if args.print_ir:
-        prompt_ir = build_prompt_ir(system)
+        prompt_ir = serialize_system_to_dict(system)
         print(json.dumps(prompt_ir, indent=2, ensure_ascii=False))
 
     if not args.print_model_info and not args.print_ir:
@@ -252,14 +250,12 @@ def _run_portable(args):
 
 
 def _run_prompt_dump(args):
-    from agent.ir import build_prompt_ir
     from agent.parser import parse_model
     from agent.runtime import AgentSystemRuntime
 
     system = parse_model(args.model_path)
-    prompt_ir = build_prompt_ir(system)
     runtime = AgentSystemRuntime(
-        prompt_ir,
+        system,
         source_model_path=args.model_path,
         use_dspy=args.dspy,
     )
@@ -349,13 +345,11 @@ def _run_generated_agent(args):
 
 
 def _run_chat(args):
-    from agent.ir import build_prompt_ir
     from agent.parser import parse_model
     from agent.runtime import AgentSystemRuntime
 
     system = parse_model(args.model_path)
-    prompt_ir = build_prompt_ir(system)
-    chat_agent = prompt_ir.get("chat_agent")
+    chat_agent = system.chatAgent
 
     if chat_agent is None:
         print(
@@ -366,19 +360,19 @@ def _run_chat(args):
         return
 
     runtime = AgentSystemRuntime(
-        prompt_ir,
+        system,
         source_model_path=args.model_path,
     )
 
-    questions = chat_agent["questions"]
-    goal = chat_agent["goal"]
-    executor_ref = chat_agent.get("executor_ref")
+    questions = chat_agent.questions
+    goal = chat_agent.goal
+    executor_ref = chat_agent.executor_ref
 
     _print_logo_v2()
 
     # Banner
     print("─" * 60, flush=True)
-    print(f"  {chat_agent['name']} ({chat_agent['persona']})", flush=True)
+    print(f"  {chat_agent.name} ({chat_agent.persona})", flush=True)
     print(f"  Goal: {goal}", flush=True)
     print("─" * 60, flush=True)
     print("  Type 'quit' or Ctrl-D to exit at any time.", flush=True)
@@ -391,7 +385,7 @@ def _run_chat(args):
         print(f"[{i + 1}/{len(questions)}] {question}", flush=True)
         try:
             answer = input("> ").strip()
-        except EOFError, KeyboardInterrupt:
+        except (EOFError, KeyboardInterrupt):
             print(flush=True)
             return
         if answer.lower() in {"quit", "exit"}:
@@ -414,7 +408,7 @@ def _run_chat(args):
 
     try:
         proceed = input("Proceed? [Y/n] ").strip().lower()
-    except EOFError, KeyboardInterrupt:
+    except (EOFError, KeyboardInterrupt):
         print(flush=True)
         return
 
@@ -461,6 +455,7 @@ def _print_logo_v2():
 
 def _load_generated_module(module_path: Path):
     spec = importlib.util.spec_from_file_location("generated_agent_module", module_path)
+    assert spec is not None
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)

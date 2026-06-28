@@ -5,7 +5,6 @@ from types import SimpleNamespace
 import pytest
 
 from agent import cli
-from agent.ir import build_prompt_ir
 from agent.parser import parse_model
 from agent.runtime import AgentSystemRuntime
 
@@ -20,24 +19,22 @@ NO_CHAT_MODEL = "models/example_full.agent"
 
 def test_chat_model_parses():
     system = parse_model(CHAT_MODEL)
-    assert system.chat_agent is not None
-    assert system.chat_agent.name == "Intake"
-    assert system.chat_agent.executor_ref == "Greeter"
-    assert len(system.chat_agent.questions) == 2
+    assert system.chatAgent is not None
+    assert system.chatAgent.name == "Intake"
+    assert system.chatAgent.executor_ref == "Greeter"
+    assert len(system.chatAgent.questions) == 2
 
 
 def test_chat_model_ir_has_chat_agent():
-    ir = build_prompt_ir(parse_model(CHAT_MODEL))
-    ca = ir["chat_agent"]
+    ca = parse_model(CHAT_MODEL).chatAgent
     assert ca is not None
-    assert ca["name"] == "Intake"
-    assert ca["executor_ref"] == "Greeter"
-    assert ca["questions"] == ["What is your name?", "Do you prefer a formal or casual greeting?"]
+    assert ca.name == "Intake"
+    assert ca.executor_ref == "Greeter"
+    assert ca.questions == ["What is your name?", "Do you prefer a formal or casual greeting?"]
 
 
 def test_no_chat_model_ir_has_none():
-    ir = build_prompt_ir(parse_model(NO_CHAT_MODEL))
-    assert ir.get("chat_agent") is None
+    assert parse_model(NO_CHAT_MODEL).chatAgent is None
 
 
 def test_chat_model_invalid_executor_ref(tmp_path):
@@ -218,7 +215,6 @@ def test_chat_bundled_input_contains_answers(monkeypatch, capsys):
 
 def test_run_with_executor_name_bypasses_planner(monkeypatch):
     system = parse_model(NO_CHAT_MODEL)
-    prompt_ir = build_prompt_ir(system)
     captured = {}
 
     def fake_run_sync(agent, user_input, *, run_config, hooks=None, max_turns=None):
@@ -228,7 +224,7 @@ def test_run_with_executor_name_bypasses_planner(monkeypatch):
     monkeypatch.setattr("agent.runtime.Runner.run_sync", fake_run_sync)
     monkeypatch.setenv("OPENAI_API_KEY", "secret")
 
-    runtime = AgentSystemRuntime(prompt_ir)
+    runtime = AgentSystemRuntime(system)
     result = runtime.run("Fix grammar", executor_name="TextEditor")
 
     assert captured["agent_name"] == "TextEditor"
@@ -238,12 +234,11 @@ def test_run_with_executor_name_bypasses_planner(monkeypatch):
 
 def test_run_with_unknown_executor_name_raises(monkeypatch):
     system = parse_model(NO_CHAT_MODEL)
-    prompt_ir = build_prompt_ir(system)
     monkeypatch.setenv("OPENAI_API_KEY", "secret")
     monkeypatch.setattr(
         "agent.runtime.Runner.run_sync",
         lambda *a, **kw: SimpleNamespace(final_output="x", raw_responses=[], new_items=[]),
     )
-    runtime = AgentSystemRuntime(prompt_ir)
+    runtime = AgentSystemRuntime(system)
     with pytest.raises(KeyError, match="NoSuchExecutor"):
         runtime.run("hello", executor_name="NoSuchExecutor")

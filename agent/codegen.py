@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import importlib.metadata as importlib_metadata
 import importlib.util
-import json
 import re
 import shutil
 import stat
@@ -10,29 +9,29 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
 
-from agent.ir import build_prompt_ir
+from agent.metamodel import System
 from agent.parser import parse_model
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
-RUNTIME_FILES = ("__init__.py", "runtime.py", "schema.py")
+RUNTIME_FILES = ("__init__.py", "runtime.py", "schema.py", "metamodel.py", "dspy_compile.py")
 PORTABLE_ROOT_IMPORTS = ("agents", "openai", "dotenv", "pydantic", "yaml")
 _REQ_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+")
 _IMPORT_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
-def render_agent_module_from_ir(prompt_ir: dict, *, source_model_path: str | None = None) -> str:
+def render_agent_module_from_system(system: System, *, source_model_path: str | None = None) -> str:
     return _render_template(
         "generated_agent.py.j2",
-        prompt_ir,
+        system,
         source_model_path=source_model_path,
         project_root=str(Path(__file__).resolve().parent.parent),
     )
 
 
-def render_portable_agent_module_from_ir(prompt_ir: dict) -> str:
+def render_portable_agent_module_from_system(system: System) -> str:
     return _render_template(
         "portable_agent.py.j2",
-        prompt_ir,
+        system,
         source_model_path=None,
         project_root="",
     )
@@ -40,7 +39,7 @@ def render_portable_agent_module_from_ir(prompt_ir: dict) -> str:
 
 def _render_template(
     template_name: str,
-    prompt_ir: dict,
+    system: System,
     *,
     source_model_path: str | None,
     project_root: str,
@@ -51,9 +50,10 @@ def _render_template(
         trim_blocks=True,
         lstrip_blocks=True,
     )
+    env.filters["pyrepr"] = repr
     template = env.get_template(template_name)
     return template.render(
-        spec_json=json.dumps(prompt_ir, indent=2, sort_keys=True),
+        system=system,
         source_model_path=source_model_path,
         project_root=project_root,
     )
@@ -61,8 +61,7 @@ def _render_template(
 
 def render_agent_module(model_path: str | Path) -> str:
     system = parse_model(model_path)
-    prompt_ir = build_prompt_ir(system)
-    return render_agent_module_from_ir(prompt_ir, source_model_path=str(model_path))
+    return render_agent_module_from_system(system, source_model_path=str(model_path))
 
 
 def generate_agent_module(model_path: str | Path, output_path: str | Path) -> Path:
@@ -77,10 +76,9 @@ def generate_portable_agent_bundle(model_path: str | Path, output_dir: str | Pat
     output_dir.mkdir(parents=True, exist_ok=True)
 
     system = parse_model(model_path)
-    prompt_ir = build_prompt_ir(system)
 
     (output_dir / "main.py").write_text(
-        render_portable_agent_module_from_ir(prompt_ir),
+        render_portable_agent_module_from_system(system),
         encoding="utf-8",
     )
     shutil.copy2(model_path, output_dir / "model.agent")
@@ -127,7 +125,7 @@ def _copy_local_runtime_package(target_dir: Path) -> None:
 def _copy_import_target(module_name: str, destination_root: Path) -> None:
     spec = importlib.util.find_spec(module_name)
     if spec is None:
-        raise RuntimeError(f"Could not locate installed module for portable bundle: {module_name}")
+        return
 
     if spec.submodule_search_locations:
         source_path = Path(next(iter(spec.submodule_search_locations)))

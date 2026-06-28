@@ -13,9 +13,9 @@ def validate_system(system):
     for executor in system.executors:
         validate_executor(executor)
         validate_executor_refs(executor, known_skill_names, known_rule_names)
-    if system.chat_agent is not None:
+    if system.chatAgent is not None:
         executor_names = {e.task.name for e in system.executors if e.task}
-        validate_chat_agent(system.chat_agent, executor_names)
+        validate_chat_agent(system.chatAgent, executor_names)
 
 
 def validate_executor_refs(executor, known_skill_names, known_rule_names):

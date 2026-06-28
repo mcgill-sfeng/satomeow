@@ -4,19 +4,135 @@ import argparse
 import json
 import sys
 
-PROJECT_ROOT = {{ project_root|tojson }}
+PROJECT_ROOT = {{ project_root|pyrepr }}
 if PROJECT_ROOT and PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from agent.runtime import AgentSystemRuntime, load_system_spec
+from agent.metamodel import ChatModeAgent, Example, ExampleCommand, ExampleCommandArgument, Executor, OutputField, OutputSpec, Planner, Rule, Skill, SkillArgument, System, Task
+from agent.runtime import AgentSystemRuntime
 
-SOURCE_MODEL_PATH = {{ source_model_path|tojson }}
-SYSTEM_SPEC_JSON = r'''{{ spec_json }}'''
+SOURCE_MODEL_PATH = {{ source_model_path|pyrepr }}
+
+
+def _build_system() -> System:
+    system = System()
+
+    planner = Planner()
+    planner.llm = {{ system.planner.llm|pyrepr }}
+    planner.reasoningStrategy = {{ system.planner.reasoningStrategy|pyrepr }}
+    planner.persona = {{ system.planner.persona|pyrepr }}
+    planner.rules = [
+{% for rule in system.planner.rules %}
+        Rule(name={{ rule.name|pyrepr }}, negative={{ rule.negative|pyrepr }}, description={{ rule.description|pyrepr }}),
+{% endfor %}
+    ]
+    system.planner = planner
+
+    system.rules = [
+{% for rule in system.rules %}
+        Rule(name={{ rule.name|pyrepr }}, negative={{ rule.negative|pyrepr }}, description={{ rule.description|pyrepr }}),
+{% endfor %}
+    ]
+    system.skills = [
+{% for skill in system.skills %}
+        Skill(
+            name={{ skill.name|pyrepr }},
+            command={{ skill.command|pyrepr }},
+            description={{ skill.description|pyrepr }},
+            skillArguments=[
+{% for arg in skill.skillArguments %}
+                SkillArgument(name={{ arg.name|pyrepr }}, description={{ arg.description|pyrepr }}),
+{% endfor %}
+            ],
+        ),
+{% endfor %}
+    ]
+    system.executors = [
+{% for executor in system.executors %}
+        Executor(
+            llm={{ executor.llm|pyrepr }},
+            reasoningStrategy={{ executor.reasoningStrategy|pyrepr }},
+            persona={{ executor.persona|pyrepr }},
+            rules=[
+{% for rule in executor.rules %}
+                Rule(name={{ rule.name|pyrepr }}, negative={{ rule.negative|pyrepr }}, description={{ rule.description|pyrepr }}),
+{% endfor %}
+            ],
+            task=Task(
+                name={{ executor.task.name|pyrepr }},
+                inputDescription={{ executor.task.inputDescription|pyrepr }},
+                behavior={{ executor.task.behavior|pyrepr }},
+                outputSpec=OutputSpec(
+                    format={{ executor.task.outputSpec.format|pyrepr }},
+                    fields=[
+{% for field in executor.task.outputSpec.fields %}
+                        OutputField(name={{ field.name|pyrepr }}, type={{ field.type|pyrepr }}),
+{% endfor %}
+                    ],
+                ),
+                examples=[
+{% for example in executor.task.examples %}
+                    Example(
+                        input={{ example.input|pyrepr }},
+                        output={{ example.output|pyrepr }},
+                        commands=[
+{% for command in example.commands %}
+                            ExampleCommand(
+                                toolName={{ command.toolName|pyrepr }},
+                                arguments=[
+{% for arg in command.arguments %}
+                                    ExampleCommandArgument(name={{ arg.name|pyrepr }}, value={{ arg.value|pyrepr }}),
+{% endfor %}
+                                ],
+                            ),
+{% endfor %}
+                        ],
+                    ),
+{% endfor %}
+                ],
+                skills=[
+{% for skill in executor.task.skills %}
+                    Skill(
+                        name={{ skill.name|pyrepr }},
+                        command={{ skill.command|pyrepr }},
+                        description={{ skill.description|pyrepr }},
+                        skillArguments=[
+{% for arg in skill.skillArguments %}
+                            SkillArgument(name={{ arg.name|pyrepr }}, description={{ arg.description|pyrepr }}),
+{% endfor %}
+                        ],
+                    ),
+{% endfor %}
+                ],
+            ),
+        ),
+{% endfor %}
+    ]
+
+{% if system.chatAgent is none %}
+    system.chatAgent = None
+{% else %}
+    chat_agent = ChatModeAgent()
+    chat_agent.name = {{ system.chatAgent.name|pyrepr }}
+    chat_agent.persona = {{ system.chatAgent.persona|pyrepr }}
+    chat_agent.llm = {{ system.chatAgent.llm|pyrepr }}
+    chat_agent.reasoningStrategy = {{ system.chatAgent.reasoningStrategy|pyrepr }}
+    chat_agent.goal = {{ system.chatAgent.goal|pyrepr }}
+    chat_agent.questions = [
+{% for question in system.chatAgent.questions %}
+        {{ question|pyrepr }},
+{% endfor %}
+    ]
+    chat_agent.executor_ref = {{ system.chatAgent.executor_ref|pyrepr }}
+    system.chatAgent = chat_agent
+{% endif %}
+
+    return system
 
 
 def build_runtime(tool_executor=None, use_dspy=False):
     return AgentSystemRuntime(
-        load_system_spec(SYSTEM_SPEC_JSON),
+        _build_system(),
         tool_executor=tool_executor,
         source_model_path=SOURCE_MODEL_PATH,
         use_dspy=use_dspy,

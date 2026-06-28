@@ -1,4 +1,4 @@
-from agent.ir import build_prompt_ir
+from agent.ir import serialize_system_to_dict
 from agent.parser import parse_model
 
 
@@ -56,7 +56,7 @@ def test_multiple_examples_parsed():
 
 def test_prompt_ir_structure():
     system = parse_model("models/example_full.agent")
-    ir = build_prompt_ir(system)
+    ir = serialize_system_to_dict(system)
 
     assert "planner" in ir
     assert "executors" in ir
@@ -70,14 +70,14 @@ def test_prompt_ir_structure():
 
 def test_prompt_ir_output_schema():
     system = parse_model("models/example_full.agent")
-    ir = build_prompt_ir(system)
+    ir = serialize_system_to_dict(system)
     assert ir["executors"][0]["task"]["output_format"] == "markdown"
     assert ir["executors"][0]["task"]["output_fields"] == []
 
 
 def test_prompt_ir_skills():
     system = parse_model("models/example_full.agent")
-    ir = build_prompt_ir(system)
+    ir = serialize_system_to_dict(system)
     task_skills = ir["executors"][0]["task"]["skills"]
     assert len(task_skills) == 2
     skill_names = {s["name"] for s in task_skills}
@@ -87,7 +87,7 @@ def test_prompt_ir_skills():
 
 def test_prompt_ir_rules_include_metadata():
     system = parse_model("models/example_full.agent")
-    ir = build_prompt_ir(system)
+    ir = serialize_system_to_dict(system)
     rule = next(rule for rule in ir["rules"] if rule["name"] == "no_hallucination")
     assert rule["negative"] is True
     assert rule["description"] == "do not make up facts"

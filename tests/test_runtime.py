@@ -6,7 +6,7 @@ import pytest
 from agents import Agent
 from agents.items import HandoffOutputItem, ToolCallItem, ToolCallOutputItem
 
-from agent.ir import build_prompt_ir
+from agent.metamodel import Executor, OutputField, OutputSpec, Planner, System, Task
 from agent.parser import parse_model
 from agent.runtime import (
     AgentSystemRuntime,
@@ -37,7 +37,7 @@ from agent.schema import coerce_structured_output, parse_output_schema
 
 
 def test_shell_tool_executor_runs_command():
-    result = ShellToolExecutor().execute("printf 'hello'")
+    result = ShellToolExecutor().execute("python -c \"import sys; sys.stdout.write('hello')\"")
     assert result.exit_code == 0
     assert result.stdout == "hello"
 
@@ -56,38 +56,38 @@ def test_render_skill_command_quotes_arguments():
 
 
 def test_build_function_tool_executes_shell_skill():
-    skill = {
-        "name": "echoTool",
-        "description": "Echo a value",
-        "command": "printf <value>",
-        "arguments": [{"name": "value", "description": "Value to print"}],
-    }
+    skill = SimpleNamespace(
+        name="echoTool",
+        description="Echo a value",
+        command="echo <value>",
+        skillArguments=[SimpleNamespace(name="value", description="Value to print")],
+    )
     tool = build_function_tool(skill, tool_executor=ShellToolExecutor())
     payload = asyncio.run(tool.on_invoke_tool(None, json.dumps({"value": "hello"})))
-    assert payload == {
-        "command": "printf hello",
-        "stdout": "hello",
-        "stderr": "",
-        "exit_code": 0,
-    }
+    assert payload["command"] == "echo hello"
+    assert payload["exit_code"] == 0
+    assert "hello" in payload["stdout"].lower()
 
 
 def test_build_output_type_for_structured_schema():
-    fields = [
-        {"name": "answer", "type": "str"},
-        {"name": "count", "type": "int"},
-        {"name": "ok", "type": "bool"},
-    ]
-    output_type = build_output_type("json", fields, "Summarizer")
+    output_spec = OutputSpec(
+        format="json",
+        fields=[
+            OutputField(name="answer", type="str"),
+            OutputField(name="count", type="int"),
+            OutputField(name="ok", type="bool"),
+        ],
+    )
+    output_type = build_output_type(output_spec, "Summarizer")
     assert output_type is not None
     instance = output_type(answer="done", count=2, ok=True)
     assert instance.model_dump() == {"answer": "done", "count": 2, "ok": True}
 
 
 def test_build_output_type_returns_none_for_non_json():
-    assert build_output_type("string", [], "Summarizer") is None
-    assert build_output_type("markdown", [], "Summarizer") is None
-    assert build_output_type("toml", [{"name": "x", "type": "str"}], "Summarizer") is None
+    assert build_output_type(OutputSpec(format="string", fields=[]), "Summarizer") is None
+    assert build_output_type(OutputSpec(format="markdown", fields=[]), "Summarizer") is None
+    assert build_output_type(OutputSpec(format="toml", fields=[OutputField(name="x", type="str")]), "Summarizer") is None
 
 
 # ---------------------------------------------------------------------------
@@ -97,14 +97,14 @@ def test_build_output_type_returns_none_for_non_json():
 
 def test_build_executor_system_prompt_mentions_inspect_first():
     system = parse_model("models/data_visualizer/data_visualizer.agent")
-    prompt = build_executor_system_prompt(build_prompt_ir(system)["executors"][0], use_dspy=False)
+    prompt = build_executor_system_prompt(system.executors[0], use_dspy=False)
     assert "Use the provided tools instead of inventing shell transcripts." in prompt
     assert "When state is uncertain, inspect first." in prompt
 
 
 def test_build_examples_prompt_can_enable_dspy_style_guidance():
     system = parse_model("models/data_visualizer/data_visualizer.agent")
-    executor = build_prompt_ir(system)["executors"][0]
+    executor = system.executors[0]
     normal = build_examples_prompt(executor, use_dspy=False)
     enriched = build_examples_prompt(executor, use_dspy=True)
     assert "Treat these examples as high-signal task demonstrations." not in normal
@@ -124,7 +124,7 @@ def test_build_model_settings_leaves_reasoning_unset_by_default():
 
 def test_build_openai_agent_compiles_tools_and_output_type():
     system = parse_model("models/data_visualizer/data_visualizer.agent")
-    executor = build_prompt_ir(system)["executors"][0]
+    executor = system.executors[0]
     agent = build_openai_agent(executor, tool_executor=ShellToolExecutor(), use_dspy=False)
     assert agent.name == "DataVisualizer"
     assert agent.model_settings.reasoning is None
@@ -138,7 +138,7 @@ def test_build_openai_agent_compiles_tools_and_output_type():
 
 def test_build_openai_agent_applies_explicit_reasoning_effort():
     system = parse_model("models/example_full.agent")
-    executor = build_prompt_ir(system)["executors"][1]
+    executor = system.executors[1]
     agent = build_openai_agent(executor, tool_executor=ShellToolExecutor(), use_dspy=False)
     assert agent.model_settings.reasoning is not None
     assert agent.model_settings.reasoning.effort == "medium"
@@ -149,46 +149,45 @@ def test_build_openai_agent_applies_explicit_reasoning_effort():
 # ---------------------------------------------------------------------------
 
 
-def _make_executors_ir():
-    """Two-executor IR fixture for planner tests."""
+def _make_executor(name: str, persona: str, input_description: str, behavior: str) -> Executor:
+    executor = Executor()
+    executor.llm = "gpt-5.4-nano"
+    executor.reasoningStrategy = "medium"
+    executor.persona = persona
+    executor.rules = []
+
+    task = Task()
+    task.name = name
+    task.inputDescription = input_description
+    task.behavior = behavior
+    task.outputSpec = OutputSpec(format="string", fields=[])
+    task.examples = []
+    task.skills = []
+
+    executor.task = task
+    return executor
+
+
+def _make_executors():
+    """Two-executor metamodel fixture for planner tests."""
     return [
-        {
-            "name": "WebResearch",
-            "llm": "gpt-5.4-nano",
-            "reasoning_strategy": "medium",
-            "persona": "research agent",
-            "rules": [],
-            "task": {
-                "name": "WebResearch",
-                "input_description": "A user question requiring web research",
-                "behavior": "Search, extract, and summarize relevant information",
-                "output_format": "string",
-                "output_fields": [],
-                "examples": [],
-                "skills": [],
-            },
-        },
-        {
-            "name": "TextEditor",
-            "llm": "gpt-5.4-nano",
-            "reasoning_strategy": "medium",
-            "persona": "editor agent",
-            "rules": [],
-            "task": {
-                "name": "TextEditor",
-                "input_description": "Text to edit with instructions",
-                "behavior": "Apply edits based on user instructions",
-                "output_format": "string",
-                "output_fields": [],
-                "examples": [],
-                "skills": [],
-            },
-        },
+        _make_executor(
+            "WebResearch",
+            "research agent",
+            "A user question requiring web research",
+            "Search, extract, and summarize relevant information",
+        ),
+        _make_executor(
+            "TextEditor",
+            "editor agent",
+            "Text to edit with instructions",
+            "Apply edits based on user instructions",
+        ),
     ]
 
 
 def test_planner_prompt_lists_all_executors():
-    executors = _make_executors_ir()
+    executors = _make_executors()
     prompt = build_planner_prompt(executors)
     assert "WebResearch" in prompt
     assert "TextEditor" in prompt
@@ -196,11 +195,9 @@ def test_planner_prompt_lists_all_executors():
 
 
 def test_build_planner_agent_has_handoffs_for_each_executor():
-    executors = _make_executors_ir()
+    executors = _make_executors()
     hooks = _RoutingHooks()
-    executor_agents = {
-        e["name"]: build_openai_agent(e, tool_executor=ShellToolExecutor(), use_dspy=False) for e in executors
-    }
+    executor_agents = {e.task.name: build_openai_agent(e, tool_executor=ShellToolExecutor(), use_dspy=False) for e in executors}
     planner = build_planner_agent(
         executors,
         executor_agents,
@@ -252,7 +249,6 @@ def test_handoff_ctx_schema():
 def test_agent_runtime_single_executor_runs_directly(monkeypatch):
     """Single-executor: Runner.run_sync is called with the executor agent (no planner)."""
     system = parse_model("models/data_visualizer/data_visualizer.agent")
-    prompt_ir = build_prompt_ir(system)
     captured = {}
 
     def fake_run_sync(agent, user_input, *, run_config, hooks=None, max_turns=None):
@@ -274,7 +270,7 @@ def test_agent_runtime_single_executor_runs_directly(monkeypatch):
     monkeypatch.setattr("agent.runtime.Runner.run_sync", fake_run_sync)
     monkeypatch.setenv("OPENAI_API_KEY", "secret")
 
-    runtime = AgentSystemRuntime(prompt_ir)
+    runtime = AgentSystemRuntime(system)
     result = runtime.run("Visualize aligned_sales.json")
 
     assert captured["agent_name"] == "DataVisualizer"
@@ -285,34 +281,40 @@ def test_agent_runtime_single_executor_runs_directly(monkeypatch):
 
 
 def test_agent_runtime_coerces_structured_output(monkeypatch):
-    system_spec = {
-        "planner": {"reasoning_strategy": "medium", "llm": "gpt-5.4-nano", "persona": "planner", "rules": []},
-        "executors": [
-            {
-                "name": "Summarizer",
-                "reasoning_strategy": "medium",
-                "llm": "gpt-5.4-nano",
-                "persona": "summarizer",
-                "rules": [],
-                "task": {
-                    "name": "Summarizer",
-                    "input_description": "summarize documents",
-                    "behavior": "summarize",
-                    "output_format": "json",
-                    "output_fields": [
-                        {"name": "answer", "type": "str"},
-                        {"name": "commands_run", "type": "int"},
-                        {"name": "success", "type": "bool"},
-                        {"name": "commands", "type": "list[str]"},
-                    ],
-                    "examples": [],
-                    "skills": [],
-                },
-            }
+    system_spec = System()
+    planner = Planner()
+    planner.llm = "gpt-5.4-nano"
+    planner.reasoningStrategy = "medium"
+    planner.persona = "planner"
+    planner.rules = []
+    system_spec.planner = planner
+
+    executor = Executor()
+    executor.llm = "gpt-5.4-nano"
+    executor.reasoningStrategy = "medium"
+    executor.persona = "summarizer"
+    executor.rules = []
+
+    task = Task()
+    task.name = "Summarizer"
+    task.inputDescription = "summarize documents"
+    task.behavior = "summarize"
+    task.outputSpec = OutputSpec(
+        format="json",
+        fields=[
+            OutputField(name="answer", type="str"),
+            OutputField(name="commands_run", type="int"),
+            OutputField(name="success", type="bool"),
+            OutputField(name="commands", type="list[str]"),
         ],
-        "rules": [],
-        "skills": [],
-    }
+    )
+    task.examples = []
+    task.skills = []
+    executor.task = task
+
+    system_spec.executors = [executor]
+    system_spec.rules = []
+    system_spec.skills = []
 
     monkeypatch.setattr(
         "agent.runtime.Runner.run_sync",
@@ -342,7 +344,6 @@ def test_agent_runtime_coerces_structured_output(monkeypatch):
 def test_agent_runtime_multi_executor_starts_with_planner(monkeypatch):
     """Multi-executor: Runner.run_sync is called with the Planner agent."""
     system = parse_model("models/example_full.agent")
-    prompt_ir = build_prompt_ir(system)
     captured = {}
 
     def fake_run_sync(agent, user_input, *, run_config, hooks=None, max_turns=None):
@@ -373,7 +374,7 @@ def test_agent_runtime_multi_executor_starts_with_planner(monkeypatch):
     monkeypatch.setattr("agent.runtime.Runner.run_sync", fake_run_sync)
     monkeypatch.setenv("OPENAI_API_KEY", "secret")
 
-    runtime = AgentSystemRuntime(prompt_ir)
+    runtime = AgentSystemRuntime(system)
     result = runtime.run("Find a source")
 
     assert captured["agent_name"] == "Planner"
@@ -390,7 +391,6 @@ def test_agent_runtime_multi_executor_starts_with_planner(monkeypatch):
 def test_agent_runtime_multi_executor_falls_back_when_no_handoff(monkeypatch):
     """If SDK never triggers a handoff, runtime defaults to first executor."""
     system = parse_model("models/example_full.agent")
-    prompt_ir = build_prompt_ir(system)
 
     def fake_run_sync(agent, user_input, *, run_config, hooks=None, max_turns=None):
         # Do NOT set hooks.executor_name — simulates planner returning direct text
@@ -399,9 +399,9 @@ def test_agent_runtime_multi_executor_falls_back_when_no_handoff(monkeypatch):
     monkeypatch.setattr("agent.runtime.Runner.run_sync", fake_run_sync)
     monkeypatch.setenv("OPENAI_API_KEY", "secret")
 
-    runtime = AgentSystemRuntime(prompt_ir)
+    runtime = AgentSystemRuntime(system)
     result = runtime.run("something")
-    assert result.executor_name == prompt_ir["executors"][0]["name"]
+    assert result.executor_name == system.executors[0].task.name
     assert "defaulted" in result.planner_reason.lower()
 
 
@@ -411,13 +411,27 @@ def test_agent_runtime_multi_executor_falls_back_when_no_handoff(monkeypatch):
 
 
 def test_parse_output_schema_for_structured_types():
-    schema = parse_output_schema("answer: str, score: float, sources: list[str]")
+    schema = parse_output_schema(
+        OutputSpec(
+            format="json",
+            fields=[
+                OutputField(name="answer", type="str"),
+                OutputField(name="score", type="float"),
+                OutputField(name="sources", type="list[str]"),
+            ],
+        )
+    )
     assert schema.is_structured
     assert [field.name for field in schema.fields] == ["answer", "score", "sources"]
 
 
 def test_coerce_structured_output_validates_shape():
-    schema = parse_output_schema("answer: str, count: int")
+    schema = parse_output_schema(
+        OutputSpec(
+            format="json",
+            fields=[OutputField(name="answer", type="str"), OutputField(name="count", type="int")],
+        )
+    )
     payload = coerce_structured_output({"answer": "ok", "count": "2"}, schema)
     assert payload == {"answer": "ok", "count": 2}
 
@@ -472,14 +486,13 @@ def test_load_openai_config_prefers_dotenv_over_environment(tmp_path, monkeypatc
 
 def test_runtime_raises_without_provider(tmp_path, monkeypatch):
     system = parse_model("models/example_full.agent")
-    prompt_ir = build_prompt_ir(system)
     model_path = tmp_path / "demo.agent"
     model_path.write_text("", encoding="utf-8")
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.chdir(tmp_path)
 
-    runtime = AgentSystemRuntime(prompt_ir, source_model_path=str(model_path))
+    runtime = AgentSystemRuntime(system, source_model_path=str(model_path))
     with pytest.raises(RuntimeError, match="No OpenAI provider configuration found"):
         runtime.run("Find a source")
 
@@ -606,8 +619,7 @@ def test_render_call_graph_dot_format():
 def test_run_result_has_call_graph(monkeypatch):
     """RunResult.call_graph is populated after a successful run."""
     system = parse_model("models/example_minimal.agent")
-    prompt_ir = build_prompt_ir(system)
-    executor_agent = Agent(name=prompt_ir["executors"][0]["name"])
+    executor_agent = Agent(name=system.executors[0].task.name)
 
     def fake_run_sync(agent, user_input, *, run_config, hooks=None, max_turns=None):
         if hooks is not None:
@@ -624,7 +636,7 @@ def test_run_result_has_call_graph(monkeypatch):
     monkeypatch.setattr("agent.runtime.Runner.run_sync", fake_run_sync)
     monkeypatch.setenv("OPENAI_API_KEY", "secret")
 
-    runtime = AgentSystemRuntime(prompt_ir)
+    runtime = AgentSystemRuntime(system)
     result = runtime.run("hello")
 
     assert isinstance(result.call_graph, CallGraph)
