@@ -1,6 +1,11 @@
 def serialize_system_to_dict(system) -> dict:
     """
-    Convert textX model into a Jinja2-friendly dictionary IR.
+    Serialize a System into a flat, JSON-friendly dictionary for the
+    ``inspect --print-ir`` debug command.
+
+    This is no longer a code-generation stage: codegen now constructs the
+    metamodel objects directly from the System. This dict survives only to back
+    the human-readable ``--print-ir`` output.
     """
 
     # ---- Global skills ----
@@ -99,8 +104,3 @@ def serialize_system_to_dict(system) -> dict:
     }
 
     return system_ir
-
-
-def build_prompt_ir(system) -> dict:
-    """Backward-compatible alias for serialization used by inspect/debug paths."""
-    return serialize_system_to_dict(system)

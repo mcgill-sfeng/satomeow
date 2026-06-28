@@ -208,13 +208,13 @@ skill_name {
 
 The `output:` field supports five formats:
 
-| Format | Example | Description |
-|---|---|---|
-| `string` | `output: string` | Plain text (default) |
-| `markdown` | `output: markdown` | Markdown-formatted text |
-| `json` | `output: json { status: str, count: int }` | JSON object, schema-validated, Pydantic-enforced |
-| `toml` | `output: toml { name: str, deps: list[str] }` | TOML, field-validated |
-| `yaml` | `output: yaml { key: str, value: float }` | YAML, field-validated |
+| Format     | Example                                       | Description                                      |
+| ---------- | --------------------------------------------- | ------------------------------------------------ |
+| `string`   | `output: string`                              | Plain text (default)                             |
+| `markdown` | `output: markdown`                            | Markdown-formatted text                          |
+| `json`     | `output: json { status: str, count: int }`    | JSON object, schema-validated, Pydantic-enforced |
+| `toml`     | `output: toml { name: str, deps: list[str] }` | TOML, field-validated                            |
+| `yaml`     | `output: yaml { key: str, value: float }`     | YAML, field-validated                            |
 
 Allowed field types: `str`, `int`, `float`, `bool`, `list[str]`, `list[int]`, `list[float]`, `list[bool]`.
 
@@ -268,15 +268,16 @@ This repository includes the frontend compiler stages plus a code-generated runt
 - Duplicate detection: rule names, skill names, skill argument names, executor/task names
 - Default value handling (`output` defaults to `"string"` when omitted)
 
-### 6. Prompt IR (Intermediate Representation)
+### 6. Debug Serialization (`--print-ir`)
 
 - Implemented in `agent/ir.py`
-- Converts the `System` object into a Jinja2-friendly dictionary
-- Flattened structure, consistent snake_case naming, cross-references resolved
+- `serialize_system_to_dict` flattens the `System` object into a JSON-friendly dictionary that backs the
+  `inspect --print-ir` debug output
 
 ### 7. Runtime and Code Generation
 
-- `agent/codegen.py` renders runnable Python modules from the IR using Jinja2
+- `agent/codegen.py` renders runnable Python modules from the `System` metamodel object using Jinja2; the generated
+  module reconstructs the `System` by instantiating metamodel classes directly
 - `agent/runtime.py` maps executors to `openai-agents-python` agents, compiles DSL skills into SDK function tools, and
   compiles structured output schemas into Pydantic output models
 - The OpenAI Agents SDK owns the model/tool loop at runtime
@@ -349,13 +350,24 @@ print(system.planner.llm)  # "gpt-5.4-nano"
 print(system.executors[0].persona)  # "research agent"
 ```
 
-### Build Prompt IR
+### Run Programmatically
+
+The runtime consumes the `System` metamodel object directly — no intermediate dictionary:
 
 ```python
-from agent.ir import build_prompt_ir
+from agent.parser import parse_model
+from agent.runtime import AgentSystemRuntime
 
-ir = build_prompt_ir(system)
-# ir["planner"], ir["executors"], ir["rules"], ir["skills"]
+system = parse_model("models/example_full.agent")
+runtime = AgentSystemRuntime(system)
+result = runtime.run("Compare the REST and GraphQL APIs of GitHub")  # requires OPENAI_API_KEY
+print(result.output)
+```
+
+To inspect the flattened debug serialization instead, use the CLI:
+
+```bash
+python -m agent.cli inspect models/example_full.agent --print-ir
 ```
 
 ### Generate Runnable Code

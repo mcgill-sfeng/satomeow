@@ -4,14 +4,13 @@ import argparse
 import json
 import os
 import sys
-from types import SimpleNamespace
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LIB_DIR = os.path.join(BASE_DIR, "lib")
 if LIB_DIR not in sys.path:
     sys.path.insert(0, LIB_DIR)
 
-from agent.metamodel import ChatModeAgent, Executor, OutputField, OutputSpec, Planner, System, Task
+from agent.metamodel import ChatModeAgent, Example, ExampleCommand, ExampleCommandArgument, Executor, OutputField, OutputSpec, Planner, Rule, Skill, SkillArgument, System, Task
 from agent.runtime import AgentSystemRuntime
 
 SOURCE_MODEL_PATH = os.path.join(BASE_DIR, "model.agent")
@@ -26,26 +25,25 @@ def _build_system() -> System:
     planner.persona = {{ system.planner.persona|pyrepr }}
     planner.rules = [
 {% for rule in system.planner.rules %}
-        SimpleNamespace(name={{ rule.name|pyrepr }}, negative={{ rule.negative|pyrepr }}, description={{ rule.description|pyrepr }}),
+        Rule(name={{ rule.name|pyrepr }}, negative={{ rule.negative|pyrepr }}, description={{ rule.description|pyrepr }}),
 {% endfor %}
     ]
     system.planner = planner
 
     system.rules = [
 {% for rule in system.rules %}
-        SimpleNamespace(name={{ rule.name|pyrepr }}, negative={{ rule.negative|pyrepr }}, description={{ rule.description|pyrepr }}),
+        Rule(name={{ rule.name|pyrepr }}, negative={{ rule.negative|pyrepr }}, description={{ rule.description|pyrepr }}),
 {% endfor %}
     ]
-    // TODO: this thing needs more refactoring to remove dependency on serialized structures
     system.skills = [
 {% for skill in system.skills %}
-        _build_skill(
+        Skill(
             name={{ skill.name|pyrepr }},
             command={{ skill.command|pyrepr }},
             description={{ skill.description|pyrepr }},
-            arguments=[
+            skillArguments=[
 {% for arg in skill.skillArguments %}
-                {"name": {{ arg.name|pyrepr }}, "description": {{ arg.description|pyrepr }}},
+                SkillArgument(name={{ arg.name|pyrepr }}, description={{ arg.description|pyrepr }}),
 {% endfor %}
             ],
         ),
@@ -53,62 +51,62 @@ def _build_system() -> System:
     ]
     system.executors = [
 {% for executor in system.executors %}
-        _build_executor(
+        Executor(
             llm={{ executor.llm|pyrepr }},
-            reasoning_strategy={{ executor.reasoningStrategy|pyrepr }},
+            reasoningStrategy={{ executor.reasoningStrategy|pyrepr }},
             persona={{ executor.persona|pyrepr }},
             rules=[
 {% for rule in executor.rules %}
-                {"name": {{ rule.name|pyrepr }}, "negative": {{ rule.negative|pyrepr }}, "description": {{ rule.description|pyrepr }}},
+                Rule(name={{ rule.name|pyrepr }}, negative={{ rule.negative|pyrepr }}, description={{ rule.description|pyrepr }}),
 {% endfor %}
             ],
-            task_data={
-                "name": {{ executor.task.name|pyrepr }},
-                "input_description": {{ executor.task.inputDescription|pyrepr }},
-                "behavior": {{ executor.task.behavior|pyrepr }},
-                "output_spec": {
-                    "format": {{ executor.task.outputSpec.format|pyrepr }},
-                    "fields": [
+            task=Task(
+                name={{ executor.task.name|pyrepr }},
+                inputDescription={{ executor.task.inputDescription|pyrepr }},
+                behavior={{ executor.task.behavior|pyrepr }},
+                outputSpec=OutputSpec(
+                    format={{ executor.task.outputSpec.format|pyrepr }},
+                    fields=[
 {% for field in executor.task.outputSpec.fields %}
-                        {"name": {{ field.name|pyrepr }}, "type": {{ field.type|pyrepr }}},
+                        OutputField(name={{ field.name|pyrepr }}, type={{ field.type|pyrepr }}),
 {% endfor %}
                     ],
-                },
-                "examples": [
+                ),
+                examples=[
 {% for example in executor.task.examples %}
-                    {
-                        "input": {{ example.input|pyrepr }},
-                        "commands": [
+                    Example(
+                        input={{ example.input|pyrepr }},
+                        output={{ example.output|pyrepr }},
+                        commands=[
 {% for command in example.commands %}
-                            {
-                                "tool_name": {{ command.toolName|pyrepr }},
-                                "arguments": [
+                            ExampleCommand(
+                                toolName={{ command.toolName|pyrepr }},
+                                arguments=[
 {% for arg in command.arguments %}
-                                    {"name": {{ arg.name|pyrepr }}, "value": {{ arg.value|pyrepr }}},
+                                    ExampleCommandArgument(name={{ arg.name|pyrepr }}, value={{ arg.value|pyrepr }}),
 {% endfor %}
                                 ],
-                            },
+                            ),
 {% endfor %}
                         ],
-                        "output": {{ example.output|pyrepr }},
-                    },
+                    ),
 {% endfor %}
                 ],
-                "skills": [
+                skills=[
 {% for skill in executor.task.skills %}
-                    {
-                        "name": {{ skill.name|pyrepr }},
-                        "command": {{ skill.command|pyrepr }},
-                        "description": {{ skill.description|pyrepr }},
-                        "arguments": [
+                    Skill(
+                        name={{ skill.name|pyrepr }},
+                        command={{ skill.command|pyrepr }},
+                        description={{ skill.description|pyrepr }},
+                        skillArguments=[
 {% for arg in skill.skillArguments %}
-                            {"name": {{ arg.name|pyrepr }}, "description": {{ arg.description|pyrepr }}},
+                            SkillArgument(name={{ arg.name|pyrepr }}, description={{ arg.description|pyrepr }}),
 {% endfor %}
                         ],
-                    },
+                    ),
 {% endfor %}
                 ],
-            },
+            ),
         ),
 {% endfor %}
     ]
@@ -132,57 +130,6 @@ def _build_system() -> System:
 {% endif %}
 
     return system
-
-
-def _build_skill(*, name, command, description, arguments):
-    return SimpleNamespace(
-        name=name,
-        command=command,
-        description=description,
-        skillArguments=[SimpleNamespace(**arg) for arg in arguments],
-    )
-
-
-def _build_executor(*, llm, reasoning_strategy, persona, rules, task_data):
-    executor = Executor()
-    executor.llm = llm
-    executor.reasoningStrategy = reasoning_strategy
-    executor.persona = persona
-    executor.rules = [SimpleNamespace(**rule) for rule in rules]
-
-    task = Task()
-    task.name = task_data["name"]
-    task.inputDescription = task_data["input_description"]
-    task.behavior = task_data["behavior"]
-    task.outputSpec = OutputSpec(
-        format=task_data["output_spec"]["format"],
-        fields=[OutputField(name=field["name"], type=field["type"]) for field in task_data["output_spec"]["fields"]],
-    )
-    task.examples = [
-        SimpleNamespace(
-            input=example["input"],
-            output=example["output"],
-            commands=[
-                SimpleNamespace(
-                    toolName=command["tool_name"],
-                    arguments=[SimpleNamespace(name=arg["name"], value=arg["value"]) for arg in command["arguments"]],
-                )
-                for command in example["commands"]
-            ],
-        )
-        for example in task_data["examples"]
-    ]
-    task.skills = [
-        _build_skill(
-            name=skill["name"],
-            command=skill["command"],
-            description=skill["description"],
-            arguments=skill["arguments"],
-        )
-        for skill in task_data["skills"]
-    ]
-    executor.task = task
-    return executor
 
 
 def build_runtime(tool_executor=None, use_dspy=False):

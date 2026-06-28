@@ -13,7 +13,7 @@ from agent.metamodel import System
 from agent.parser import parse_model
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
-RUNTIME_FILES = ("__init__.py", "runtime.py", "schema.py")
+RUNTIME_FILES = ("__init__.py", "runtime.py", "schema.py", "metamodel.py", "dspy_compile.py")
 PORTABLE_ROOT_IMPORTS = ("agents", "openai", "dotenv", "pydantic", "yaml")
 _REQ_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+")
 _IMPORT_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
