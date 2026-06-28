@@ -278,12 +278,6 @@ def test_cli_prompt_dump_requires_selector_for_multi_executor():
         raise AssertionError("expected SystemExit for ambiguous multi-executor prompt dump")
 
 
-def test_cli_legacy_print_ir(capsys):
-    cli.main(["models/example_full.agent", "--print-ir"])
-    captured = capsys.readouterr()
-    assert '"planner"' in captured.out
-
-
 def _write_safe_model(path: Path) -> Path:
     path.write_text(
         """llm: "gpt-5.4-nano"

@@ -9,8 +9,6 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 GRAMMAR_PATH = PROJECT_ROOT / "grammar" / "agent.tx"
 
 _metamodel_cache = None
-
-# Grammar modification time at cache build time — used to invalidate on grammar changes.
 _metamodel_grammar_mtime: float | None = None
 
 
@@ -37,35 +35,16 @@ def load_metamodel():
 
 
 def parse_model(model_path):
-    """
-    Parse and validate a .agent file.
-
-    Two-phase approach:
-      1. textX parses the file; Rule/Skill processors run during parsing.
-      2. build_system_from_model() transforms the Model into a System.
-      3. validate_system() validates the System.
-
-    Args:
-        model_path: Path to the .agent file.
-
-    Returns:
-        System: Parsed and validated System object.
-    """
+    """Parse and validate a .agent file into a System."""
     mm = load_metamodel()
     model = mm.model_from_file(str(model_path))
     return _build_and_validate(model)
 
 
 def parse_model_text(model_text, source_name="<memory>"):
-    """
-    Parse and validate in-memory .agent content.
+    """Parse and validate in-memory .agent content into a System.
 
-    Args:
-        model_text: Full .agent document content.
-        source_name: Logical source filename for diagnostics.
-
-    Returns:
-        System: Parsed and validated System object.
+    source_name is the logical filename used in diagnostics.
     """
     mm = load_metamodel()
     model = mm.model_from_str(model_text, file_name=str(source_name))

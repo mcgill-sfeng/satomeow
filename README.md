@@ -231,7 +231,7 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your_api_key_here
 ```
 
-If no provider is configured, `agent.cli run` fails fast with a clear message instead of silently falling back.
+If no provider is configured, `agent.cli run` fails fast with a clear message.
 
 ## Implementation
 
@@ -302,12 +302,6 @@ python -m agent.cli compile models/data_visualizer/data_visualizer.agent --model
 python -m agent.cli run models/example_full.agent --dspy "Compare the REST and GraphQL APIs of GitHub"
 ```
 
-Legacy inspection mode is still supported:
-
-```bash
-python -m agent.cli models/example_full.agent --print-ir
-```
-
 ### 9. Example DSL Files
 
 Located in `models/`:
@@ -352,7 +346,7 @@ print(system.executors[0].persona)  # "research agent"
 
 ### Run Programmatically
 
-The runtime consumes the `System` metamodel object directly — no intermediate dictionary:
+The runtime consumes the `System` metamodel object directly:
 
 ```python
 from agent.parser import parse_model

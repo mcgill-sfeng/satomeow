@@ -14,7 +14,6 @@ _SCALAR_TYPES = {
     "bool": bool,
 }
 
-_TEXT_FORMATS = {"string", "markdown"}
 _STRUCTURED_FORMATS = {"json", "toml", "yaml"}
 _LIST_TYPE_RE = re.compile(r"^list\[(?P<inner>[a-z]+)\]$")
 
@@ -27,47 +26,18 @@ class OutputFieldSpec:
 
 @dataclass(frozen=True)
 class OutputSchemaSpec:
-    """Normalised output schema derived from the IR's output_format + output_fields."""
-
     format: str  # 'json' | 'toml' | 'yaml' | 'markdown' | 'string'
     fields: tuple[OutputFieldSpec, ...] = ()
-
-    @property
-    def is_text(self) -> bool:
-        return self.format in _TEXT_FORMATS
 
     @property
     def is_structured(self) -> bool:
         return self.format in _STRUCTURED_FORMATS
 
-    # Legacy compatibility: callers that used .mode == "structured" / "text"
-    @property
-    def mode(self) -> str:
-        return "structured" if self.is_structured else "text"
 
-    # Legacy compatibility: .raw used in a few places
-    @property
-    def raw(self) -> str:
-        if not self.fields:
-            return self.format
-        parts = ", ".join(f"{f.name}: {f.type_name}" for f in self.fields)
-        return f"{self.format} {{ {parts} }}"
-
-
-def parse_output_schema(output_spec: OutputSpec | str | None = None) -> OutputSchemaSpec:
-    """Build an OutputSchemaSpec from a metamodel OutputSpec.
-
-    Also accepts a bare legacy string (e.g. ``"status: str, message: str"``)
-    for backwards-compatibility with tests and DSPy utilities.
-    """
+def parse_output_schema(output_spec: OutputSpec | None = None) -> OutputSchemaSpec:
+    """Build an OutputSchemaSpec from a metamodel OutputSpec."""
     if output_spec is None:
         return OutputSchemaSpec(format="string", fields=())
-
-    if isinstance(output_spec, str):
-        fmt = output_spec.strip().lower()
-        if ":" in fmt and fmt not in _STRUCTURED_FORMATS and fmt not in _TEXT_FORMATS:
-            return _parse_legacy_string(output_spec)
-        return OutputSchemaSpec(format=fmt, fields=())
 
     fmt = (output_spec.format or "string").strip().lower()
     fields: list[OutputFieldSpec] = []
@@ -79,37 +49,6 @@ def parse_output_schema(output_spec: OutputSpec | str | None = None) -> OutputSc
             fields.append(OutputFieldSpec(name=name, type_name=type_name))
 
     return OutputSchemaSpec(format=fmt, fields=tuple(fields))
-
-
-def _parse_legacy_string(schema_text: str) -> OutputSchemaSpec:
-    """Parse the old comma-separated 'field: type' string format."""
-    raw = schema_text.strip()
-    normalized = raw.lower()
-
-    if normalized in _TEXT_FORMATS or normalized in _STRUCTURED_FORMATS:
-        return OutputSchemaSpec(format=normalized, fields=())
-
-    field_specs = []
-    for item in raw.split(","):
-        chunk = item.strip()
-        if not chunk:
-            continue
-        if ":" not in chunk:
-            raise ValueError(
-                "Structured output schemas must use 'field: type' items " f"separated by commas. Got: {raw!r}"
-            )
-        name, type_name = chunk.split(":", 1)
-        field_name = name.strip()
-        normalized_type = type_name.strip().lower()
-        if not field_name:
-            raise ValueError(f"Output schema field name is empty in {raw!r}")
-        _python_type_for_name(normalized_type)
-        field_specs.append(OutputFieldSpec(name=field_name, type_name=normalized_type))
-
-    if not field_specs:
-        return OutputSchemaSpec(format="string", fields=())
-
-    return OutputSchemaSpec(format="json", fields=tuple(field_specs))
 
 
 def describe_output_schema(schema: OutputSchemaSpec) -> str:
@@ -180,26 +119,6 @@ def _parse_text_format(payload: Any, fmt: str) -> Any:
             raise ImportError("Install 'pyyaml' for YAML output validation") from exc
         return yaml.safe_load(payload)
     return payload
-
-
-def build_dspy_signature_class(schema_text: str, class_name: str = "GeneratedSignature"):
-    schema = _parse_legacy_string(schema_text)
-    if schema.is_text:
-        return None
-
-    try:
-        import dspy  # type: ignore[import-untyped]
-    except ImportError as exc:
-        raise RuntimeError("dspy is not installed. Install dspy to build structured signatures.") from exc
-
-    annotations: dict[str, type[Any]] = {}
-    namespace = {"__annotations__": annotations}
-
-    for field in schema.fields:
-        annotations[field.name] = _python_type_for_name(field.type_name)
-        namespace[field.name] = dspy.OutputField(desc=field.name.replace("_", " "))
-
-    return type(class_name, (dspy.Signature,), namespace)
 
 
 def _coerce_value(value: Any, type_name: str) -> Any:

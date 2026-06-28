@@ -1,20 +1,12 @@
 """
-Object processors and model transformation for the Agent DSL v2 grammar.
+Object processors and model transformation for the Agent DSL grammar.
 
-Processors (process_rule, process_skill) are registered with the textX
-metamodel and run automatically during parsing, modifying objects in-place.
+process_rule and process_skill are registered with the textX metamodel and run
+automatically during parsing, modifying objects in-place.
 
 build_system_from_model() is called explicitly after model_from_file()
 because textX does not propagate a replaced root object back through
 model_from_file — returning a new object from a root processor has no effect.
-
-Processing order (textX runs processors bottom-up):
-  Param    (no-op, consumed by Skill processor)
-  Rule     → adds `negative` boolean from `ruleType`
-  Skill    → renames `params` to `skillArguments`
-  Example  (no-op, structure already matches TaskExample interface)
-  ExecutorSyntax (no-op; consumed by build_system_from_model)
-  Model    (no-op at processor level; transformed by build_system_from_model)
 """
 
 from agent.metamodel import (
@@ -40,15 +32,9 @@ def build_system_from_model(model):
     carry a `negative` attribute and Skill objects carry `skillArguments`.
 
     Skills and rules are collected first so that executor skill/rule references
-    (now plain ID lists) can be resolved by name lookup.  The raw ID lists are
+    (plain ID lists) can be resolved by name lookup.  The raw ID lists are
     preserved on executor/task as `_rule_refs` / `_skill_refs` so that
     validation can report unknown-reference errors with a useful location.
-
-    Args:
-        model: textX Model with llm, reasoningStrategy, and items list.
-
-    Returns:
-        System: Complete metamodel object ready for validation.
     """
     rules = [item for item in model.items if item.__class__.__name__ == "Rule"]
     skills = [item for item in model.items if item.__class__.__name__ == "Skill"]
@@ -135,7 +121,6 @@ def _build_output_spec(raw_spec) -> OutputSpec:
         fields = [OutputField(name=f.name, type=str(f.type)) for f in (raw_spec.fields or [])]
         return OutputSpec(format=str(raw_spec.format), fields=fields)
 
-    # Fallback: unknown spec type — treat as plain string
     return OutputSpec(format="string", fields=[])
 
 
@@ -156,30 +141,13 @@ def _build_example_command(raw_command) -> ExampleCommand:
 
 
 def process_rule(rule):
-    """
-    Convert ruleType string ('do' or 'dont') to a boolean `negative` attribute.
-
-    Args:
-        rule: Parsed Rule with ruleType attribute.
-
-    Returns:
-        Rule: Same object with `negative` attribute added.
-    """
+    """Convert the ruleType string ('do'/'dont') to a boolean `negative` attribute."""
     rule.negative = rule.ruleType == "dont"
     return rule
 
 
 def process_skill(skill):
-    """
-    Rename `params` to `skillArguments`, converting Param objects to
-    SkillArgument instances to match the metamodel interface.
-
-    Args:
-        skill: Parsed Skill with `params` list.
-
-    Returns:
-        Skill: Same object with `skillArguments` attribute added.
-    """
+    """Rename `params` to `skillArguments`, converting Param objects to SkillArguments."""
     skill.skillArguments = []
     for p in skill.params:
         skill_arg = SkillArgument(name=p.name, description=p.description)

@@ -2,11 +2,8 @@
 Metamodel classes for the Agent DSL.
 
 These plain Python classes define the fixed object structure that the parser
-and validator operate on, and that code generation constructs directly: a
-generated module's ``_build_system()`` instantiates these classes by hand
-instead of reassembling nested dictionaries. The v1 grammar creates equivalent
-objects dynamically via textX; the v2 grammar uses object processors to
-construct these explicitly.
+and validator operate on, and that a generated module's ``_build_system()``
+instantiates directly.
 """
 
 
@@ -66,18 +63,8 @@ class OutputSpec:
         self.format: str = format
         self.fields: list[OutputField] = fields or []
 
-    @property
-    def is_structured(self) -> bool:
-        return self.format in ("json", "toml", "yaml")
-
-    @property
-    def is_text(self) -> bool:
-        return not self.is_structured
-
 
 class OutputField:
-    """A single field in a structured output spec."""
-
     def __init__(self, name: str = "", type: str = "str"):
         self.name: str = name
         self.type: str = type
@@ -96,16 +83,10 @@ class ChatModeAgent:
         self.reasoningStrategy: str = None
         self.goal: str = None
         self.questions: list = []
-        self.executor_ref: str | None = None  # optional: name of executor to hand off to
+        self.executor_ref: str | None = None
 
 
 class Rule:
-    """A do/dont rule.
-
-    Constructed directly by generated code (the parse path uses textX's dynamic
-    Rule objects, which carry the same `name`/`negative`/`description` fields).
-    """
-
     def __init__(self, name=None, negative=False, description=None):
         self.name: str = name
         self.negative: bool = negative
@@ -113,11 +94,7 @@ class Rule:
 
 
 class Skill:
-    """A shell skill with interpolated arguments.
-
-    Constructed directly by generated code (the parse path uses textX's dynamic
-    Skill objects, which carry the same fields after `process_skill`).
-    """
+    """A shell skill with interpolated arguments."""
 
     def __init__(self, name=None, command=None, description=None, skillArguments=None):
         self.name: str = name
@@ -127,12 +104,7 @@ class Skill:
 
 
 class Example:
-    """A task example (input → command trajectory → output).
-
-    Constructed directly by generated code; the parse path keeps the raw textX
-    example object (whose `.commands` are already metamodel ExampleCommand
-    objects), so compare by field, not by type.
-    """
+    """A task example (input → command trajectory → output)."""
 
     def __init__(self, input=None, output=None, commands=None):
         self.input: str = input
